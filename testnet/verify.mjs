@@ -144,13 +144,22 @@ async function main() {
     }
   }
 
-  console.log("\nEvery address in the deployment record actually has code:");
+  console.log("\nEvery CONTRACT address in the deployment record actually has code:");
+  // `faucet` is deliberately excluded: deploy.mjs records it as the faucet signer's own address,
+  // an EOA the deployer granted MINTER_ROLE to, not something it deployed. Checking it here was a
+  // false-positive FAIL on every successful deploy -- caught by actually running this against a
+  // live deployment rather than trusting a local dry run.
+  const EOA_FIELDS = new Set(["faucet"]);
   const addressFields = Object.entries(record).filter(
-    ([, v]) => typeof v === "string" && /^0x[0-9a-fA-F]{40}$/.test(v),
+    ([k, v]) => typeof v === "string" && /^0x[0-9a-fA-F]{40}$/.test(v) && !EOA_FIELDS.has(k),
   );
   for (const [field, addr] of addressFields) {
     const code = await provider.getCode(addr);
     check(`${field} (${addr})`, code !== "0x");
+  }
+  if (record.faucet) {
+    const faucetCode = await provider.getCode(record.faucet);
+    info("faucet is an EOA (not a contract), as expected", `${record.faucet}${faucetCode !== "0x" ? " -- WARNING: has code, that's unexpected" : ""}`);
   }
 
   const earn = new ethers.Contract(record.hfyc, EARN_ABI, provider);
