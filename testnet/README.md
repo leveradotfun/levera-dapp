@@ -12,7 +12,7 @@ This folder exists so the testnet path never has to touch `contracts/`: nothing 
 | Prices | **Real market values**, read from Robinhood **mainnet's** Chainlink feeds at deploy time and seeded into the mock oracles (testnet has no feeds of its own — every mainnet address is empty code there). `refresh-prices.mjs` re-syncs them on demand |
 | WETH, USDG, cbBTC tokens | Mocks. USDG is 18 decimals (live mainnet USDG is 6 — never copy this to mainnet). cbBTC is an 8-decimal stand-in; no official cbBTC exists on 46630 |
 | Oracles | `MockPriceOracle`, owner-settable, seeded with the real market and refreshable |
-| Router | `OracleSwapRouter` — fills at the oracle and mints its output, so there is no inventory to fund and no AMM to bootstrap |
+| Router | `OracleSwapRouter` — fills from inventory first, mints only the shortfall (role-gated, granted to each router at deploy) — so there is no inventory to pre-fund and no AMM to bootstrap |
 | Earn Pool / Launch / factories | The real contracts, unchanged, including the multi-collateral registry and **both** launchpads authorised on the pool |
 
 The result is a chain where every number the protocol computes is computed correctly — the ETH price is the actual ETH price, cbBTC is actually 8 decimals — even though the tokens themselves are mocks.
@@ -30,6 +30,49 @@ node verify.mjs               # wiring checks; add --probe-launch to also create
 1. Fund the deployer from the faucet: <https://faucet.testnet.chain.robinhood.com> (the full stack is ~15 deployments, but testnet gas is near-free — the whole thing costs ~0.0003 ETH; the script refuses to start under 0.002 ETH).
 2. `DEPLOYER_PRIVATE_KEY` — a testnet-only key. It will own every contract (Earn Pool owner, both factory owners, the oracles). Never a mainnet key.
 3. Contract bytecode comes from `contracts/out/` — run `forge build` in `contracts/` first if it is missing.
+
+### Redeploy (fresh addresses, e.g. after rotating a leaked key)
+
+Every command below is run from `testnet/` unless noted. Redeploying overwrites `data/deployment-testnet.json` — every user's `frontend`/`ui` tab picks up the new addresses automatically on its next poll, no restart needed on their end.
+
+1. **You're in `contracts/`.** Make sure the build is current and matches the committed lock file:
+   ```bash
+   cd contracts
+   forge build
+   node hash-artifacts.mjs check
+   ```
+   If `check` reports drift, that means `src/` changed since the lock file was last approved. Review the diff, then (still in `contracts/`) `node hash-artifacts.mjs write` and commit the updated `artifacts.lock.json` before deploying — `deploy.mjs` will refuse otherwise.
+
+2. **You're in `testnet/`.** If you're rotating the deployer key (recommended if the old one may have been exposed — e.g. it sat behind an ops route, or a laptop with `.env` on it was shared):
+   ```bash
+   cd testnet
+   node -e "console.log(require('ethers').Wallet.createRandom().privateKey)"
+   ```
+   Copy the printed key into `DEPLOYER_PRIVATE_KEY` in `.env` (open the file directly — there is no script for this, it holds a secret). Fund the new address with ≥ 0.002 ETH, either from the public faucet above, or — if you already control a funded key on this deployment (e.g. the faucet wallet) — by sending it directly:
+   ```bash
+   node -e '
+   import("ethers").then(async ({ ethers }) => {
+     const provider = new ethers.JsonRpcProvider("https://rpc.testnet.chain.robinhood.com", undefined, { staticNetwork: true });
+     const sender = new ethers.Wallet("0x<a funded private key>", provider);
+     const tx = await sender.sendTransaction({ to: "0x<new deployer address>", value: ethers.parseEther("0.01"), gasLimit: 30000n });
+     console.log((await tx.wait()).hash);
+   });'
+   ```
+   If you're sweeping the OLD deployer's leftover balance somewhere before abandoning the key, same pattern — `sender` is the old key, send its balance minus gas to wherever it should go.
+
+3. **You're in `testnet/`.**
+   ```bash
+   node deploy.mjs
+   ```
+   This checks the bytecode lock file itself before deploying anything, so step 1 is a courtesy, not a strict prerequisite — but running it first means you find out about drift before spending any gas.
+
+4. **You're in `testnet/`.**
+   ```bash
+   node verify.mjs
+   ```
+   All checks should pass. If `mint() is gated` fails for any token, or ownership isn't the address you expect, stop and investigate before pointing users at it.
+
+5. **Nothing to do here** — `frontend/.env.local` and `ui/.env.local` already point `NEXT_PUBLIC_RPC_URL` at the testnet RPC (if either doesn't, see "Point the apps at it" below); both read `data/deployment-testnet.json` by `updatedAt` on their own.
 
 ### Price seeding
 
