@@ -3,10 +3,10 @@
 import { useEffect, useState } from "react";
 import { ethers } from "ethers";
 import { LaunchSummary, WAD } from "@/lib/launchpad";
-import { HFycGlobal, fetchHFycGlobal } from "@/lib/hfyc";
+import { LycGlobal, fetchLycGlobal } from "@/lib/lyc";
 import { DeployedAddresses } from "@/lib/chain";
 
-/// Explore header stats, computed from the launch list the page already holds plus one HFyc read.
+/// Explore header stats, computed from the launch list the page already holds plus one LYC read.
 /// Kept cheap on purpose: the launches arrive on the page's own poll, and the Earn Pool figure is
 /// a single read refreshed on the same cadence.
 export default function ExploreStats({
@@ -16,14 +16,14 @@ export default function ExploreStats({
   launches: LaunchSummary[];
   addresses: DeployedAddresses | null;
 }) {
-  const [hfyc, setHfyc] = useState<HFycGlobal | null>(null);
+  const [lyc, setLyc] = useState<LycGlobal | null>(null);
 
   useEffect(() => {
     if (!addresses) return;
     let stopped = false;
     const load = () =>
-      fetchHFycGlobal(addresses)
-        .then((g) => !stopped && setHfyc(g))
+      fetchLycGlobal(addresses)
+        .then((g) => !stopped && setLyc(g))
         .catch(() => {});
     void load();
     const id = setInterval(load, 60_000);
@@ -50,9 +50,9 @@ export default function ExploreStats({
       value: `$${volume24h.toLocaleString("en-US", { maximumFractionDigits: 0 })}`,
     },
     {
-      label: "HFyc NAV",
-      value: hfyc ? `$${(Number(hfyc.nav) / 1e18).toFixed(4)}` : "—",
-      sub: hfyc ? `${(Number(hfyc.supply) / 1e18).toLocaleString("en-US", { maximumFractionDigits: 0 })} shares` : undefined,
+      label: "LYC NAV",
+      value: lyc ? `$${(Number(lyc.nav) / 1e18).toFixed(4)}` : "—",
+      sub: lyc ? `${(Number(lyc.supply) / 1e18).toLocaleString("en-US", { maximumFractionDigits: 0 })} shares` : undefined,
     },
   ];
 

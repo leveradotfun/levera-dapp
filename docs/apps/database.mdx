@@ -8,7 +8,7 @@ Everything that used to live in browser `localStorage` and needed to survive a r
 price points, the trade ledger, rebalances, X profiles, and per-asset `collateral_samples`.
 
 ```bash
-createdb hoodfrenzy
+createdb levera
 ```
 
 That is the whole setup.
@@ -33,7 +33,7 @@ next attempt rather than poisoning the process until it restarts.
 
 | Table | Holds |
 |---|---|
-| `hfyc_nav` | NAV, occupancy, cash yield, liability, utilisation over time |
+| `hfyc_nav` | NAV, occupancy, cash yield, liability, utilisation over time. Table and API route name predate the LYC rename; renaming a live table needs a migration, not just an edit, so it is still `hfyc_nav` on purpose. |
 | `price_points` | Per-launch price series |
 | `ledger_totals` + `trades` | Per-trader position and the trades behind it |
 | `rebalances` | Rebalance history per launch |
@@ -70,7 +70,7 @@ from which deployment.
 ## Connection
 
 ```
-DATABASE_URL=postgresql://mac@127.0.0.1:5432/hoodfrenzy
+DATABASE_URL=postgresql://<user>@127.0.0.1:5432/levera
 ```
 
 Override in `ui/.env.local` and `frontend/.env.local`. See `.env.example`.

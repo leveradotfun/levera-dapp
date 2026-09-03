@@ -18,26 +18,26 @@ icon: shield
 
 ## Not trusted
 
-- Meme traders, HFyc holders, launch bots, any EOA that is not owner/guardian.
+- Meme traders, LYC holders, launch bots, any EOA that is not owner/guardian.
 - `recentVolumeUsd` ranking (single-slot wash detector). `reallocateFrom` moves real senior on that score. Two-wallet wash can still game it; treat ranking as adversarial.
 
 ## Failure modes we accept
 
-- **ETH −50% one oracle print:** junior wipes, HFyc is leftover / supply. 2x first-loss. Named, not a bug.
+- **ETH −50% one oracle print:** junior wipes, LYC is leftover / supply. 2x first-loss. Named, not a bug.
 - **Keeper lag:** protect is 15% of vault per tx; $L$ can print above 2.5 between ticks.
-- **Pause:** mint/pair/protect/harvest halt. Curve/AMM buys and HFyc redeem stay up so people can exit. Redemption is paid in kind and does not depend on a route or a swap, so it keeps working while paused.
+- **Pause:** mint/pair/protect/harvest halt. Curve/AMM buys and LYC redeem stay up so people can exit. Redemption is paid in kind and does not depend on a route or a swap, so it keeps working while paused.
 
 ## Perimeter that was tightened
 
 - CEI on curve buy (refund after state writes).
 - `ISwapRouter` not `MockSwapRouter` in Launch/EarnPool.
 - Factory-only `registerPool`.
-- Two-step HFyc owner.
+- Two-step LYC owner.
 - Guardian pause.
 - `MIN_RAISE_ETH = 0.1 ether`.
 - `occupancyCursor` 32-pool rotate on redeem.
 - WETH `safeTransfer`.
-- 1x cannot take creator fees in HFyc.
+- 1x cannot take creator fees in LYC.
 - Capped AMM sells re-derive $k$ from ETH actually paid.
 
 ## Before mainnet with real money

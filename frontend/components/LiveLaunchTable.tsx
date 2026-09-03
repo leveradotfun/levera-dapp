@@ -255,7 +255,7 @@ export default function LiveLaunchTable({
                         <span
                           title={
                             l.paired
-                              ? "Paired at 2x against HFyc"
+                              ? "Paired at 2x against LYC"
                               : l.leverageEnabled
                                 ? "2x enabled"
                                 : "Spot market"

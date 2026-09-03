@@ -1,17 +1,17 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "theme": "palm",
-  "name": "HoodFrenzy",
-  "description": "Pump.fun-style memecoin launchpad on Robinhood Chain, with an optional 2x overlay rented from a dollar-senior Earn Pool.",
+  "name": "levera",
+  "description": "A launchpad on Robinhood Chain, with an optional 2x overlay rented from a dollar-senior Earn Pool.",
   "colors": {
-    "primary": "#C8FF00",
-    "light": "#D4FF4D",
-    "dark": "#A3CC00"
+    "primary": "#ece3d1",
+    "light": "#f4eee2",
+    "dark": "#c9c1b2"
   },
-  "favicon": "/favicon.png",
+  "favicon": "/favicon.svg",
   "logo": {
-    "light": "/logo.png",
-    "dark": "/logo.png"
+    "light": "/logo.svg",
+    "dark": "/logo.svg"
   },
   "appearance": {
     "default": "dark",
@@ -31,11 +31,11 @@
     "links": [
       {
         "label": "Launchpad",
-        "href": "http://localhost:3002"
+        "href": "https://levera.fun"
       },
       {
         "label": "Console",
-        "href": "http://localhost:3001"
+        "href": "https://console.levera.fun"
       }
     ]
   },

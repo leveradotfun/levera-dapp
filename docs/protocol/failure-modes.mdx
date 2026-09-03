@@ -10,13 +10,13 @@ The sell route opens, fillers ratchet the senior into USDG, NAV holds, memes del
 
 ## Gap −50% one oracle print
 
-Junior zero. HFyc NAV $=$ leftover / supply, possibly below $\$1$. Pro-rata exit. This is **not** a bug. 2x means a *larger* gap than 3x, not no gap.
+Junior zero. LYC NAV $=$ leftover / supply, possibly below $\$1$. Pro-rata exit. This is **not** a bug. 2x means a *larger* gap than 3x, not no gap.
 
 At 3x the same story happens at −33% ETH, with almost no time to `protect()`. That is why 3x was rejected.
 
 ## Thin USDG pool
 
-`protect()` and fee swaps revert on `minOut` (99% of oracle). Trading on that launch can halt until depth returns. Better than a bad fill socialized onto HFyc. Do not widen `minOut` to "make it work."
+`protect()` and fee swaps revert on `minOut` (99% of oracle). Trading on that launch can halt until depth returns. Better than a bad fill socialized onto LYC. Do not widen `minOut` to "make it work."
 
 ## Empty idle
 
@@ -24,19 +24,19 @@ No 2x pairs at full size. Coins can still sell on the curve; they graduate into 
 
 ## 2-minute coin, huge volume
 
-HFyc NAV jumps from the 50 bps holder slice (after harvest) + pairing bps. Occupancy $\approx 0$. Correct.
+LYC NAV jumps from the 50 bps holder slice (after harvest) + pairing bps. Occupancy $\approx 0$. Correct.
 
 ## 2-minute coin, zero volume, instant dump
 
-Pairing bps is the only yield. `protect()` may slip against junior. HFyc should still be whole if the move is inside −50% and txs land. If not, the gap case.
+Pairing bps is the only yield. `protect()` may slip against junior. LYC should still be whole if the move is inside −50% and txs land. If not, the gap case.
 
-## Protocol sells fee-HFyc
+## Protocol sells fee-LYC
 
 Equivalent to having been paid USDG. Depositors were not diluted at mint (assets in, then shares out). Fee-minted shares are liquid; alignment is that the treasury holds the senior of live 2x pools, not a time-lock.
 
 ## All launches are ETH
 
-Isolation does not save HFyc from one crash. USDG idle is the only diversifier until another collateral type exists.
+Isolation does not save LYC from one crash. USDG idle is the only diversifier until another collateral type exists.
 
 ## Junior mint at NAV without new senior
 
@@ -48,7 +48,7 @@ $L$ falls. Below $1.8$ the buy route opens for anyone who wants to fill it. Do n
 
 ## Pause
 
-Mint / pair / protect / harvest halt. Curve/AMM buys and HFyc redeem stay up so people can exit. Peels that need `protect()` fail while paused if idle is short. See [Pause](/security/pause).
+Mint / pair / protect / harvest halt. Curve/AMM buys and LYC redeem stay up so people can exit. Peels that need `protect()` fail while paused if idle is short. See [Pause](/security/pause).
 
 ## 15% caps are griefable
 

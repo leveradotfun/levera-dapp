@@ -1,14 +1,14 @@
 import { ethers } from "ethers";
 import { DeployedAddresses } from "./chain";
-import { LaunchSummary, WAD, fetchAllLaunches, getLaunch, getProvider, getHFyc } from "./launchpad";
+import { LaunchSummary, WAD, fetchAllLaunches, getLaunch, getProvider, getLyc } from "./launchpad";
 import { TradePoint, isTrade, tradesFor } from "./launchStats";
 
 // Mirrors Launch.sol's fee schedule. Creator's 50 bps is flat; the rest (50 bps) splits between
-// protocol and HFyc, HFyc earning up to 5 of it, scaled per-trade by seniorUsd/memeNAV on that
+// protocol and LYC, LYC earning up to 5 of it, scaled per-trade by seniorUsd/memeNAV on that
 // specific pool (see Launch._accrueFeeQuote) -- not a static ratio, so these constants describe
-// only the creator/floor-protocol shape, not HFyc's variable slice.
+// only the creator/floor-protocol shape, not LYC's variable slice.
 const CREATOR_FEE_BPS = 50n;
-const PROTOCOL_FEE_BPS = 45n; // floor -- rises toward 50 as HFyc's slice shrinks toward 0
+const PROTOCOL_FEE_BPS = 45n; // floor -- rises toward 50 as LYC's slice shrinks toward 0
 const TOTAL_FEE_BPS = 100n;
 
 export type TopPnl = {
@@ -27,7 +27,7 @@ export type PlatformAnalytics = {
   /// USD value of every WETH the protocol holds, across every coin. See fetchPlatformAnalytics for
   /// exactly which balances that covers.
   tvlUsd: number;
-  /// The senior claim on that collateral, i.e. what HFyc holders are owed. Nothing is borrowed in
+  /// The senior claim on that collateral, i.e. what LYC holders are owed. Nothing is borrowed in
   /// this model -- leverage comes from pairing against senior capital, not from a lending market --
   /// so the meaningful split is senior versus junior, not gross versus debt.
   seniorUsd: number;
@@ -37,30 +37,30 @@ export type PlatformAnalytics = {
   totalVolumeUsd: number;
   volume24hUsd: number;
   /// Trading-fee protocol slice only: booked-but-unharvested ETH across every coin, plus the
-  /// treasury's current liquid HFyc balance once harvested. See hfycMintFeesUsd/hfycRedeemFeesUsd
-  /// below for the OTHER protocol fee -- HFyc's own mint/redeem fee is a separate, lifetime-total
+  /// treasury's current liquid LYC balance once harvested. See lycMintFeesUsd/lycRedeemFeesUsd
+  /// below for the OTHER protocol fee -- LYC's own mint/redeem fee is a separate, lifetime-total
   /// figure and deliberately not folded into this one to avoid double-counting when the same
   /// address holds both (the common case, but not guaranteed -- `EarnPool.owner` and
   /// `LaunchpadFactory.protocolFeeRecipient` are independently settable).
   protocolFeesUsd: number;
   creatorFeesUsd: number;
   claimedCreatorFeesUsd: number;
-  /// Lifetime USD value of HFyc's mint fee (0.10% of every deposit) and redeem fee (0.25% of every
-  /// covered exit). Both mint as liquid HFyc directly to `EarnPool.owner` -- a protocol fee, not a
+  /// Lifetime USD value of LYC's mint fee (0.10% of every deposit) and redeem fee (0.25% of every
+  /// covered exit). Both mint as liquid LYC directly to `EarnPool.owner` -- a protocol fee, not a
   /// NAV lift shared with every holder -- so unlike protocolFeesUsd above, these read straight off
   /// EarnPool's own cumulative counters rather than inferring anything from a wallet balance.
-  hfycMintFeesUsd: number;
-  hfycRedeemFeesUsd: number;
+  lycMintFeesUsd: number;
+  lycRedeemFeesUsd: number;
   totalLaunches: number;
   totalGraduated: number;
   activeTraders24h: number;
   totalTrades: number;
   /// The senior side. `borrowedUsd` above describes the junior's leverage; these describe who is
   /// lending it and what they are being paid.
-  hfycNav: number;
-  hfycLiability: number;
-  hfycIdleUsdc: number;
-  hfycGlobalCr: number;
+  lycNav: number;
+  lycLiability: number;
+  lycIdleUsdc: number;
+  lycGlobalCr: number;
   /// Share of the senior book at work, and the APR pools pay to rent it. The two move together by
   /// construction -- a starved book pays more, which is what refills it.
   seniorUtilization: number;
@@ -80,12 +80,12 @@ export const EMPTY_ANALYTICS: PlatformAnalytics = {
   protocolFeesUsd: 0,
   creatorFeesUsd: 0,
   claimedCreatorFeesUsd: 0,
-  hfycMintFeesUsd: 0,
-  hfycRedeemFeesUsd: 0,
-  hfycNav: 1,
-  hfycLiability: 0,
-  hfycIdleUsdc: 0,
-  hfycGlobalCr: 0,
+  lycMintFeesUsd: 0,
+  lycRedeemFeesUsd: 0,
+  lycNav: 1,
+  lycLiability: 0,
+  lycIdleUsdc: 0,
+  lycGlobalCr: 0,
   seniorUtilization: 0,
   fundingApr: 0,
   totalLaunches: 0,
@@ -132,9 +132,9 @@ function computeTopPnl(allTrades: TradePoint[], limit: number): TopPnl[] {
 /// Platform-wide numbers for the analytics page, aggregated across every coin on the factory.
 export async function fetchPlatformAnalytics(addresses: DeployedAddresses): Promise<PlatformAnalytics> {
   const launches = await fetchAllLaunches(addresses);
-  // No early return on zero launches: HFyc can hold real deposits, mint fees, and a protocol
+  // No early return on zero launches: LYC can hold real deposits, mint fees, and a protocol
   // treasury balance before a single coin has ever been created (a plain mintWithUsdg needs no
-  // launch to exist), and this function's own HFyc-reading block below is unconditional. Bailing
+  // launch to exist), and this function's own LYC-reading block below is unconditional. Bailing
   // out here used to zero the entire page -- NAV, liability, mint/redeem fees, all of it -- the
   // moment there were no coins yet, regardless of what had actually happened on the senior side.
   // Every loop and block below already handles an empty `launches` safely (see the explicit
@@ -234,7 +234,7 @@ export async function fetchPlatformAnalytics(addresses: DeployedAddresses): Prom
         claimedCreatorFeesUsd += toUsd(creatorClaimed);
 
         // Only the ETH still awaiting harvest. Once harvested the protocol's slice exists as
-        // liquid HFyc in the treasury, which is a single global position -- added once after this
+        // liquid LYC in the treasury, which is a single global position -- added once after this
         // loop rather than per launch, or it would be multiplied by the launch count.
         protocolFeesUsd += toUsd(protocolPending);
       } catch {
@@ -243,63 +243,63 @@ export async function fetchPlatformAnalytics(addresses: DeployedAddresses): Prom
     })
   );
 
-  // The protocol's harvested fees live as liquid HFyc in the treasury -- one global position, so
+  // The protocol's harvested fees live as liquid LYC in the treasury -- one global position, so
   // it is added exactly once here rather than inside the per-launch loop above, where it would
   // have been multiplied by the number of launches.
   if (launches.length > 0) {
     try {
-      const hfyc = getHFyc(addresses.hfyc);
+      const lyc = getLyc(addresses.lyc);
       const treasury: string = await getLaunch(launches[0].address, getProvider()).feeRecipient();
       const [held, nav] = await Promise.all([
-        hfyc.balanceOf(treasury) as Promise<bigint>,
-        hfyc.nav() as Promise<bigint>,
+        lyc.balanceOf(treasury) as Promise<bigint>,
+        lyc.nav() as Promise<bigint>,
       ]);
       protocolFeesUsd += Number((held * nav) / WAD) / 1e18;
     } catch {
-      // nothing harvested yet, or HFyc unreachable -- the pending ETH legs still stand
+      // nothing harvested yet, or LYC unreachable -- the pending ETH legs still stand
     }
   }
 
   // The senior book, read in one pass. Reported even with no launches yet: the queue and the
-  // funding rate exist from the moment HFyc does, and the rate is what tells a would-be depositor
+  // funding rate exist from the moment LYC does, and the rate is what tells a would-be depositor
   // whether now is a good time.
-  let hfycNav = 1;
-  let hfycLiability = 0;
-  let hfycIdleUsdc = 0;
-  let hfycGlobalCr = 0;
+  let lycNav = 1;
+  let lycLiability = 0;
+  let lycIdleUsdc = 0;
+  let lycGlobalCr = 0;
   let seniorUtilization = 0;
   let fundingApr = 0;
-  let hfycMintFeesUsd = 0;
-  let hfycRedeemFeesUsd = 0;
+  let lycMintFeesUsd = 0;
+  let lycRedeemFeesUsd = 0;
   try {
-    const hfyc = getHFyc(addresses.hfyc);
+    const lyc = getLyc(addresses.lyc);
     const [navW, liabW, idleW, crW, utilW, rateW, mintFeeW, redeemFeeW] = await Promise.all([
-      hfyc.nav() as Promise<bigint>,
-      hfyc.liability() as Promise<bigint>,
-      hfyc.idleUsdg() as Promise<bigint>,
-      hfyc.globalCr() as Promise<bigint>,
-      hfyc.utilizationWad() as Promise<bigint>,
-      hfyc.fundingRateWad() as Promise<bigint>,
-      hfyc.totalMintFeeUsd() as Promise<bigint>,
-      hfyc.totalRedeemFeeUsd() as Promise<bigint>,
+      lyc.nav() as Promise<bigint>,
+      lyc.liability() as Promise<bigint>,
+      lyc.idleUsdg() as Promise<bigint>,
+      lyc.globalCr() as Promise<bigint>,
+      lyc.utilizationWad() as Promise<bigint>,
+      lyc.fundingRateWad() as Promise<bigint>,
+      lyc.totalMintFeeUsd() as Promise<bigint>,
+      lyc.totalRedeemFeeUsd() as Promise<bigint>,
     ]);
-    hfycNav = Number(navW) / 1e18;
-    hfycLiability = Number(liabW) / 1e18;
-    hfycIdleUsdc = Number(idleW) / 1e18;
-    hfycMintFeesUsd = Number(mintFeeW) / 1e18;
-    hfycRedeemFeesUsd = Number(redeemFeeW) / 1e18;
+    lycNav = Number(navW) / 1e18;
+    lycLiability = Number(liabW) / 1e18;
+    lycIdleUsdc = Number(idleW) / 1e18;
+    lycMintFeesUsd = Number(mintFeeW) / 1e18;
+    lycRedeemFeesUsd = Number(redeemFeeW) / 1e18;
     // Uninitialised books report max uint; showing that as a cover ratio would be nonsense.
-    hfycGlobalCr = liabW === 0n ? 0 : Number(crW) / 1e18;
+    lycGlobalCr = liabW === 0n ? 0 : Number(crW) / 1e18;
     seniorUtilization = Number(utilW) / 1e18;
     fundingApr = Number(rateW) / 1e18;
   } catch {
-    // no HFyc reachable -- the rest of the page still stands
+    // no LYC reachable -- the rest of the page still stands
   }
 
   const tvlUsd = Number(tvlUsdWei) / 1e18;
   // liability + SUM memeNAV == SUM TVL + idle, so the junior side follows from the identity
   // rather than needing its own per-launch pass.
-  const juniorUsd = Math.max(0, tvlUsd + hfycIdleUsdc - hfycLiability);
+  const juniorUsd = Math.max(0, tvlUsd + lycIdleUsdc - lycLiability);
   void borrowedUsdWei;
 
   // Compute daily volume and daily launches for the last 14 days
@@ -356,19 +356,19 @@ export async function fetchPlatformAnalytics(addresses: DeployedAddresses): Prom
 
   return {
     tvlUsd,
-    seniorUsd: hfycLiability,
+    seniorUsd: lycLiability,
     juniorUsd,
     totalVolumeUsd,
     volume24hUsd,
     protocolFeesUsd,
     creatorFeesUsd,
     claimedCreatorFeesUsd,
-    hfycMintFeesUsd,
-    hfycRedeemFeesUsd,
-    hfycNav,
-    hfycLiability,
-    hfycIdleUsdc,
-    hfycGlobalCr,
+    lycMintFeesUsd,
+    lycRedeemFeesUsd,
+    lycNav,
+    lycLiability,
+    lycIdleUsdc,
+    lycGlobalCr,
     seniorUtilization,
     fundingApr,
     totalLaunches: launches.length,

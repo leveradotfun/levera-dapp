@@ -8,10 +8,10 @@ icon: users
 
 | Who | Holds | What they are |
 |---|---|---|
-| HFyc depositor | **HFyc** | Senior. Dollar claim. No ETH upside once paired. Paid in NAV (unminted fees, pairing bps, occupancy). |
+| LYC depositor | **LYC** | Senior. Dollar claim. No ETH upside once paired. Paid in NAV (unminted fees, pairing bps, occupancy). |
 | Meme buyer | The launch token | Junior. 100% of ETH delta. Pays fees + rent. Leverage is rented and can fall. |
-| Protocol treasury | Fee-minted **HFyc** (always liquid) | Aligned with HFyc. Not paid ETH. |
-| Creator | ETH **or** fee-minted HFyc | Toggle set once at launch, immutable. 1x is ETH-only. |
+| Protocol treasury | Fee-minted **LYC** (always liquid) | Aligned with LYC. Not paid ETH. |
+| Creator | ETH **or** fee-minted LYC | Toggle set once at launch, immutable. 1x is ETH-only. |
 
 ## Trusted roles (short)
 
@@ -32,8 +32,8 @@ Full table in [Threat model](/security/threat-model).
 | Token | Role | Decimals (live) |
 |---|---|---|
 | ETH / WETH | Collateral. Curve custody, AMM reserve, vault collateral. | 18 |
-| USDG | Cash leg. Idle HFyc, pairing proceeds, harvest proceeds. | 6 on mainnet |
-| HFyc | Senior ERC-20. Issued at NAV. | 18 |
+| USDG | Cash leg. Idle LYC, pairing proceeds, harvest proceeds. | 6 on mainnet |
+| LYC | Senior ERC-20. Issued at NAV. | 18 |
 | Launch token | Junior. Fixed 1,000,000,000 supply. | 18 |
 
 <Danger>

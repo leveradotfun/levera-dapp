@@ -164,7 +164,7 @@ export default function LiveLaunchGrid({
                         ? "bg-blue-400/15 text-blue-400"
                         : "bg-surface text-muted"
                   }`}
-                  title={l.paired ? "Paired against HFyc senior at 2x" : l.leverageEnabled ? "Graduated — pairs when HFyc senior is available" : "Spot market"}
+                  title={l.paired ? "Paired against LYC senior at 2x" : l.leverageEnabled ? "Graduated — pairs when LYC senior is available" : "Spot market"}
                 >
                   {l.paired ? "2x live" : l.leverageEnabled ? "1x · awaiting senior" : "spot"}
                 </span>

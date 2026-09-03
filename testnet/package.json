@@ -1,8 +1,8 @@
 {
-  "name": "hoodfrenzy-testnet",
+  "name": "levera-testnet",
   "private": true,
   "type": "module",
-  "description": "Deploy the HoodFrenzy launchpad stack to Robinhood Chain testnet (chain 46630) with mock oracles seeded from the real mainnet feeds.",
+  "description": "Deploy the Levera launchpad stack to Robinhood Chain testnet (chain 46630) with mock oracles seeded from the real mainnet feeds.",
   "scripts": {
     "deploy": "node deploy.mjs",
     "verify": "node verify.mjs",

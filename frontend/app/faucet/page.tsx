@@ -7,6 +7,7 @@ import { useWallet } from "@/lib/wallet";
 import { TX_TIMEOUT_MS, withTimeout } from "@/lib/txTimeout";
 import { getActiveSigner, withActiveSigner } from "@/lib/activeSigner";
 import ConnectWalletButton from "@/components/ConnectWalletButton";
+import TokenIcon from "@/components/TokenIcon";
 import { humanizeError, toastError, toastSuccess } from "@/lib/toast";
 import { formatWad } from "@/lib/launchpad";
 
@@ -28,7 +29,7 @@ type FaucetStatus = {
 const CARDS: Array<{ asset: Asset; label: string; onChainSymbol: string; daily: string; blurb: string; accent: string; decimals: number; testnetAddress: string }> = [
   { asset: "cbbtc", label: "cbBTC", onChainSymbol: "mcbBTC", daily: "0.5", blurb: "Launch and trade cbBTC-quoted coins.", accent: "#f7931a", decimals: 8, testnetAddress: "0x056Fe96EAB78d0a89e7E26a89724578Ee721c191" },
   { asset: "weth", label: "WETH", onChainSymbol: "mWETH", daily: "5", blurb: "Launch WETH-quoted coins and trade.", accent: "#627eea", decimals: 18, testnetAddress: "0x9504a9946Efe6858f8cbA6e6Ea0efBb9105592be" },
-  { asset: "usdg", label: "USDG", onChainSymbol: "mUSDG", daily: "10,000", blurb: "Mint HFyc in the Earn Pool.", accent: "#22c55e", decimals: 18, testnetAddress: "0xe37F7675aE587b9d6EAB0f443E41fcF48866dA28" },
+  { asset: "usdg", label: "USDG", onChainSymbol: "mUSDG", daily: "10,000", blurb: "Mint LYC in the Earn Pool.", accent: "#22c55e", decimals: 18, testnetAddress: "0xe37F7675aE587b9d6EAB0f443E41fcF48866dA28" },
   { asset: "eth", label: "ETH", onChainSymbol: "ETH", daily: "0.001", blurb: "Gas money — paid from the community pot.", accent: "#a1a1aa", decimals: 18, testnetAddress: "" },
 ];
 
@@ -103,7 +104,7 @@ export default function FaucetPage() {
   // Load persisted "added" state from localStorage on mount
   useEffect(() => {
     try {
-      const stored = localStorage.getItem("hoodfrenzy-added-tokens");
+      const stored = localStorage.getItem("levera-added-tokens");
       if (stored) setAddedTokens(new Set(JSON.parse(stored)));
     } catch {}
   }, []);
@@ -136,7 +137,7 @@ export default function FaucetPage() {
       // signer from it -- the API rejects a claim for any address that did not sign.
       const day = new Date().toISOString().slice(0, 10);
       const { signer } = await getActiveSigner();
-      const message = `HoodFrenzy faucet claim\n${asset} ${day}\n${wallet.address.toLowerCase()}`;
+      const message = `Levera faucet claim\n${asset} ${day}\n${wallet.address.toLowerCase()}`;
       const signature = await signer.signMessage(message);
       const r = await fetch("/api/faucet", {
         method: "POST",
@@ -230,7 +231,7 @@ export default function FaucetPage() {
             <div key={card.asset} className="rounded-2xl border border-border bg-card p-5 flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: card.accent }} />
+                  <TokenIcon symbol={card.label} size={22} />
                   <span className="text-sm font-semibold text-foreground">{card.label}</span>
                 </div>
                 <span className="font-mono text-xs text-accent">{card.daily} / day</span>
@@ -255,7 +256,7 @@ export default function FaucetPage() {
                                 const next = new Set(addedTokens);
                                 next.add(liveAddress);
                                 setAddedTokens(next);
-                                localStorage.setItem("hoodfrenzy-added-tokens", JSON.stringify([...next]));
+                                localStorage.setItem("levera-added-tokens", JSON.stringify([...next]));
                                 toastSuccess(`${card.label} added to wallet.`);
                               }
                             } catch (e) {

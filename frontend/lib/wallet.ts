@@ -16,7 +16,7 @@ export type WalletBalances = {
 };
 
 /// Left behind on MAX so the next tx still has gas. Shared so the header, the trade card, create,
-/// and HFyc never disagree about how much "ETH" is spendable.
+/// and LYC never disagree about how much "ETH" is spendable.
 export const GAS_RESERVE = 5n * 10n ** 16n; // 0.05 ETH
 
 export function spendableEth(native: bigint, reserve: bigint = GAS_RESERVE): bigint {

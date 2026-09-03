@@ -318,9 +318,9 @@ async function fetchLaunchStatsUncoordinated(
             const senior = e.args.seniorUsd as bigint;
             newLoopLev = junior > 0n ? Number(((senior + junior) * WAD) / junior) / 1e18 : 2;
             const totalEth = e.args.ethFromQueue as bigint;
-            // totalEth is raise + HFyc (0.3989 = 0.1999+0.1999). HFyc-sourced is ~0.19999 — deduce via senior share
-            const hfycEth = senior + junior > 0n ? (totalEth * senior) / (senior + junior) : totalEth / 2n;
-            collateral = hfycEth;
+            // totalEth is raise + LYC (0.3989 = 0.1999+0.1999). LYC-sourced is ~0.19999 — deduce via senior share
+            const lycEth = senior + junior > 0n ? (totalEth * senior) / (senior + junior) : totalEth / 2n;
+            collateral = lycEth;
             tokens = 0n;
             isBuy = false;
             type = "rebalance";

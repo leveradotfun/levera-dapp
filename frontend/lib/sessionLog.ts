@@ -100,7 +100,7 @@ export async function logLaunch(row: {
   });
 }
 
-export async function logHfycRedeem(row: {
+export async function logLycRedeem(row: {
   kind: "cash" | "in-kind" | "pro-rata";
   shares: string;
   usdOut: string;
@@ -116,7 +116,7 @@ export async function logHfycRedeem(row: {
   });
 }
 
-export async function logHfycMint(row: { usdValue: string; shares: string; paidInEth: boolean }) {
+export async function logLycMint(row: { usdValue: string; shares: string; paidInEth: boolean }) {
   await post("events", {
     ...envelope(),
     event_type: "MINT",

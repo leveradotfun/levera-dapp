@@ -5,7 +5,7 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        bg: "#131514",
+        bg: "#121212",
         card: "#141414",
         elevated: "#1a1a1a",
         surface: "#1e1e1e",

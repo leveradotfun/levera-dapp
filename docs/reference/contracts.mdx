@@ -13,8 +13,8 @@ Keep: isolated clones, oracle conf/staleness, fee accrue-not-push, factory param
 | Contract | Role |
 |---|---|
 | `Launch` | Clone impl. Curve, graduate, pair, AMM router, rebalance routes, reserve correction, in-kind peels, occupancy index, fee split, harvest. |
-| `LaunchpadFactory` | EIP-1167 `clone` + `initialize` + `hfyc.registerPool`. Immutable implementation. |
-| `HFyc` | ERC-20 senior. Mint against USDG/ETH, redeem/peel, `depositYield`, `feeMint`, `accrueFunding`, pause. |
+| `LaunchpadFactory` | EIP-1167 `clone` + `initialize` + `lyc.registerPool`. Immutable implementation. |
+| `LYC` | ERC-20 senior. Mint against USDG/ETH, redeem/peel, `depositYield`, `feeMint`, `accrueFunding`, pause. |
 | `MemePair` | TOKEN/WETH $xy=k$. 2x prices off `juniorEth`, pays from `reserveEth`. |
 | `OracleLib` | Fail-closed $P$. |
 | `ChainlinkPriceOracle` | ETH/USD + USDG/USD. |
@@ -26,7 +26,7 @@ Keep: isolated clones, oracle conf/staleness, fee accrue-not-push, factory param
 
 `buy`, `sell`, `buyOnPool`, `sellOnPool`, `fillSellRoute`, `fillBuyRoute`, `rebalanceToReserve`, `protect` (orphans only), `harvest`, `claimCreatorFees`, `accrueFunding`, `reallocateFrom`, `releaseForRedeem`, `releaseToAllocator`, `releaseToPool`, `releaseProRata`, `acceptSeniorInKind`. Views: `leverageWad`, `crWad`, `memeNAV`, `tvlUsd`, `juniorEth`, `seniorStats`, `seniorClaimEth`, `seniorCoverageWad`, `reserveCoverWad`, `seniorGapUsd`, `seniorExcessUsd`, `sellRouteQuote`, `buyRouteQuote`, `tradeFeeBps`, `recentVolumeUsd`, `collateralPrice`.
 
-## HFyc public surface (selected)
+## LYC public surface (selected)
 
 `mintWithUsdg`, `mintWithEth`, `redeem`, `redeemInKind`, `emergencyRedeem`, `netSeniorBetween`, `depositYield`, `feeMint`, `accrueFunding`, `accruePools`, `checkpointYield`, `lendIdle`, `moveSeniorToIdle`, `receiveSeniorInKind`, `sweepOrphaned`, `registerPool` (factory), `pause` / `unpause`, two-step owner. Views: `nav`, `globalCr`, `utilizationWad`, `fundingRateWad`, `ethDropToImpairmentWad`, `oracleLive`, `earnPoolApyWad`, `earnPoolWindow`, `earnPoolYieldMixWad`, `totalYieldUsd`.
 

@@ -1,6 +1,6 @@
 ---
 title: Harvest
-description: Fees are booked in ETH and settled in batches. Holder slice lifts NAV; protocol and creator-in-HFyc mint at NAV.
+description: Fees are booked in ETH and settled in batches. Holder slice lifts NAV; protocol and creator-in-LYC mint at NAV.
 icon: wheat
 ---
 
@@ -8,12 +8,12 @@ Swapping on every trade would put a DEX round-trip inside the hot path and let a
 
 ## Accounting identity
 
-Three ways value arrives at HFyc, as three functions, because collapsing them is how a book silently stops balancing:
+Three ways value arrives at LYC, as three functions, because collapsing them is how a book silently stops balancing:
 
 | Function | USDG moves? | Shares minted? | NAV | Used for |
 |---|---|---|---|---|
 | `depositYield` | Yes | No | Up | Pairing 50 bps, **holder** 50 bps |
-| `feeMint` | Yes (already pulled) | Yes, $\mathrm{usd}/\mathrm{NAV}$ | Unchanged | Protocol slice, creator-in-HFyc |
+| `feeMint` | Yes (already pulled) | Yes, $\mathrm{usd}/\mathrm{NAV}$ | Unchanged | Protocol slice, creator-in-LYC |
 | `accrueFunding` | No | No | Up (junior down) | Occupancy |
 
 Raising liability for a fee whose USDG never arrived inflates the claim against unchanged assets. Minting shares for occupancy would give away the yield.
@@ -25,16 +25,16 @@ Raising liability for a fee whose USDG never arrived inflates the claim against 
 3. Zero those buckets (creator ETH-fee bucket is left for `claimCreatorFees`).
 4. Wrap, swap to USDG at 99% of oracle.
 5. Split proceeds **in the same proportion the ETH went in**, so swap slippage is shared.
-6. Rounding dust goes to **holders**. Sweeping it into the creator's slice would fee-mint HFyc to a creator who chose ETH.
+6. Rounding dust goes to **holders**. Sweeping it into the creator's slice would fee-mint LYC to a creator who chose ETH.
 7. `depositYield(holderUsd)`; `feeMint(feeRecipient, protocolUsd, true)`; `feeMint(creator, creatorUsd, false)` if opted in.
 
 On **1x**, `holderFeeEth` is always zero. Harvest is protocol 95 bps `feeMint` only. NAV does not move.
 
 ## Keepers
 
-The public app and the console tick every launch with `harvestableEth > 0`. If keepers stop, unharvested ETH sits in the launch contract, not in HFyc NAV. The `/hfyc` durability panel shows `unharvestedEth`. Anyone can call `harvest()`.
+The public app and the console tick every launch with `harvestableEth > 0`. If keepers stop, unharvested ETH sits in the launch contract, not in LYC NAV. The `/lyc` durability panel shows `unharvestedEth`. Anyone can call `harvest()`.
 
-## Supply on the HFyc page
+## Supply on the LYC page
 
 $$
 \mathrm{supply} = \underbrace{\mathrm{deposit\_minted}}_{\texttt{totalDepositMinted}} + \underbrace{\mathrm{fee\_minted}}_{\texttt{totalFeeMinted}}

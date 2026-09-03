@@ -67,7 +67,7 @@ export type DeployedAddresses = {
   /// The cbBTC-quoted launchpad. A creator picks their quote asset by picking the launchpad.
   cbbtcFactory?: string;
   router: string;
-  hfyc: string;
+  lyc: string;
   factory: string;
   launch: string;
   // When this deployment was published (ms epoch). Optional because addresses saved before this
@@ -100,7 +100,7 @@ export function normalizeDeployedAddresses(raw: unknown): DeployedAddresses | nu
     usdg,
     oracle: String(o.oracle ?? ""),
     router: String(o.router ?? ""),
-    hfyc: String(o.hfyc ?? ""),
+    lyc: String(o.lyc ?? ""),
     factory: o.factory,
     launch: String(o.launch ?? ""),
     feed: str("feed"),
@@ -157,7 +157,7 @@ export function wipeFrontendDeploymentState(factory?: string) {
         k === DEPLOYED_ADDRESSES_KEY ||
         k === "launchpad-price-history" ||
         k.startsWith("launchpad-frontend:ledger:") ||
-        k.startsWith("hfyc-nav:")
+        k.startsWith("lyc-nav:")
       ) {
         doomed.push(k);
       }

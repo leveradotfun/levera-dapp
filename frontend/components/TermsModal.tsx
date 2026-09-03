@@ -30,7 +30,7 @@ export default function TermsModal({ open, onAccept, onClose }: TermsModalProps)
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-xl font-bold text-foreground mb-2 text-center">
-          Review the terms before trading on Robinhood.fun
+          Review the terms before trading on Levera
         </h2>
 
         <p className="text-sm text-muted mb-6 text-center leading-relaxed">

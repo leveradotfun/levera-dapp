@@ -37,7 +37,7 @@ follow that one switch. See `testnet/README.md`.
 ## Prototype checklist
 
 1. ~~Map testnet WETH / USDG / feeds~~ — feeds do not exist on testnet; real 4663 prices seed the mock oracles instead, and the tokens are mocks, stated as such.
-2. Fund a deployer from the faucet: <https://faucet.testnet.chain.robinhood.com>.
+2. Fund a deployer from the faucet: [faucet.testnet.chain.robinhood.com](https://faucet.testnet.chain.robinhood.com).
 3. `node testnet/deploy.mjs` — implementation, EarnPool, pair factory, both launchpad factories, oracles, routers.
 4. `data/deployment-testnet.json` is written automatically; the apps read it with `?chain=testnet`.
 5. Run keepers from a process with a key, not only from `/ui`.

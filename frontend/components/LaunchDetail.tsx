@@ -700,7 +700,7 @@ export default function LaunchDetail({
             </div>
 
             <p className="text-[11px] text-muted text-center">
-              1.00% fee — 0.50% creator, up to 0.05% to HFyc (scaled by how paired this pool is),
+              1.00% fee — 0.50% creator, up to 0.05% to LYC (scaled by how paired this pool is),
               the rest to protocol.
             </p>
 
@@ -753,7 +753,7 @@ export default function LaunchDetail({
                     <div className="flex justify-between gap-2"><span className="text-muted truncate">Token reserve</span><span className="font-mono text-foreground truncate">{tokenReserveAmountLabel} · {tokenReserveUsdLabel}</span></div>
                     {launch.leverageEnabled ? (
                       <>
-                        <div className="flex justify-between gap-2"><span className="text-muted truncate">HFyc vault</span><span className="font-mono text-foreground truncate">{fmtQuote(launch.vaultEth, quotePlaces)} {quoteSymbol}</span></div>
+                        <div className="flex justify-between gap-2"><span className="text-muted truncate">LYC vault</span><span className="font-mono text-foreground truncate">{fmtQuote(launch.vaultEth, quotePlaces)} {quoteSymbol}</span></div>
                         <div className="flex justify-between gap-2"><span className="text-muted truncate">Occupancy paid</span><span className="font-mono text-foreground truncate">{usd(launch.occupancyPaidUsd)}</span></div>
                         <div className="flex justify-between gap-2"><span className="text-muted truncate">Pairing fees</span><span className="font-mono text-foreground truncate">{usd(launch.pairingFeesPaidUsd)}</span></div>
                       </>

@@ -1,4 +1,4 @@
-// Deploy the HoodFrenzy stack to Robinhood Chain TESTNET (chain 46630).
+// Deploy the Levera stack to Robinhood Chain TESTNET (chain 46630).
 //
 //   cd testnet && cp .env.example .env   # then add DEPLOYER_PRIVATE_KEY
 //   npm install

@@ -1,13 +1,13 @@
 import { ethers } from "ethers";
 import { DeployedAddresses } from "./chain";
-import { allFactories, fetchCollateralPriceUsd, fetchLaunchAddresses, getHFyc, getLaunch, protectLaunch, WAD } from "./launchpad";
+import { allFactories, fetchCollateralPriceUsd, fetchLaunchAddresses, getLyc, getLaunch, protectLaunch, WAD } from "./launchpad";
 import { assertWalletSeesApp, getProvider, withActiveSigner } from "./activeSigner";
 import { sendReplacing, walletTxOverrides } from "./txFees";
 
-/// The senior book as a whole. These are the figures HFYC.md §14 says the HFyc page must show, so
+/// The senior book as a whole. These are the figures LEVERA.md §14 says the LYC page must show, so
 /// that "price up" is never mistaken for yield when it is really a fee mint bringing its own
 /// assets along.
-export type HFycGlobal = {
+export type LycGlobal = {
   nav: bigint;
   liability: bigint;
   idleUsdg: bigint;
@@ -21,12 +21,12 @@ export type HFycGlobal = {
   utilization: bigint;
   fundingRate: bigint;
   ethDropToImpairment: bigint;
-  /// Occupancy rent 2x memes have paid (no cash in — junior NAV down, HFyc NAV up).
+  /// Occupancy rent 2x memes have paid (no cash in — junior NAV down, LYC NAV up).
   /// Settled on-chain only. Pending rent is `occupancyPendingUsd` and is NOT in `nav`.
   occupancyUsd: bigint;
   /// Timestamp-index rent not yet written. Informational; redeem settles it on-chain first.
   occupancyPendingUsd: bigint;
-  /// Pairing bps + harvested holder-fee slice (cash in, HFyc NAV up).
+  /// Pairing bps + harvested holder-fee slice (cash in, LYC NAV up).
   cashYieldUsd: bigint;
   /// Read live off the contract rather than hardcoded -- REDEEM_FEE_BPS and COVERED_CR_WAD are
   /// both `public constant`s on EarnPool.sol, and this quote preview drifting silently out of
@@ -38,7 +38,7 @@ export type HFycGlobal = {
 };
 
 /// One holder's position. Issuance is instant: what you hold is what you own and can exit.
-export type HFycPosition = {
+export type LycPosition = {
   /// Whose position this is -- the connected wallet.
   address: string;
   balance: bigint;
@@ -47,8 +47,8 @@ export type HFycPosition = {
   maxRedeemable: bigint;
 };
 
-export async function fetchHFycGlobal(addresses: DeployedAddresses): Promise<HFycGlobal> {
-  const h = getHFyc(addresses.hfyc);
+export async function fetchLycGlobal(addresses: DeployedAddresses): Promise<LycGlobal> {
+  const h = getLyc(addresses.lyc);
   const [
     nav,
     liability,
@@ -143,12 +143,12 @@ export async function pendingOccupancyUsd(factories: string[], fundingRate: bigi
   return sum;
 }
 
-export async function fetchHFycPosition(
+export async function fetchLycPosition(
   addresses: DeployedAddresses,
   holder: string
-): Promise<HFycPosition> {
+): Promise<LycPosition> {
   const who = holder;
-  const h = getHFyc(addresses.hfyc);
+  const h = getLyc(addresses.lyc);
   const [balance, locked, unlocked, maxRedeemable] = await Promise.all([
     h.balanceOf(who) as Promise<bigint>,
     h.lockedBalanceOf(who) as Promise<bigint>,
@@ -163,17 +163,17 @@ const ERC20_ABI = [
   "function approve(address,uint256) returns (bool)",
 ];
 
-/// Mint HFyc with USDG. Instant and 1:1-backed: a dollar of claim against a dollar of cash.
+/// Mint LYC with USDG. Instant and 1:1-backed: a dollar of claim against a dollar of cash.
 async function ensureUsdgAllowance(addresses: DeployedAddresses, owner: string, amount: bigint, signer: ethers.Signer) {
   const cash = new ethers.Contract(addresses.usdg, ERC20_ABI, getProvider());
-  const allowance: bigint = await cash.allowance(owner, addresses.hfyc);
+  const allowance: bigint = await cash.allowance(owner, addresses.lyc);
   if (allowance >= amount) return;
   const provider = getProvider();
   try {
     await provider.send("anvil_impersonateAccount", [owner]);
     const imp = new ethers.JsonRpcSigner(provider, owner);
     const tx = await new ethers.Contract(addresses.usdg, ERC20_ABI, imp).approve(
-      addresses.hfyc,
+      addresses.lyc,
       ethers.MaxUint256,
       { gasLimit: 200_000n },
     );
@@ -181,7 +181,7 @@ async function ensureUsdgAllowance(addresses: DeployedAddresses, owner: string, 
     await provider.send("anvil_stopImpersonatingAccount", [owner]);
   } catch {
     const cashSigner = new ethers.Contract(addresses.usdg, ERC20_ABI, signer);
-    await (await cashSigner.approve(addresses.hfyc, ethers.MaxUint256, await walletTxOverrides(owner, 200_000n))).wait();
+    await (await cashSigner.approve(addresses.lyc, ethers.MaxUint256, await walletTxOverrides(owner, 200_000n))).wait();
   }
 }
 
@@ -189,12 +189,12 @@ export async function mintWithUsdg(addresses: DeployedAddresses, usdAmount: bigi
   await assertWalletSeesApp(addresses.factory);
   return withActiveSigner(async ({ signer, address }) => {
     await ensureUsdgAllowance(addresses, address, usdAmount, signer);
-    const h = getHFyc(addresses.hfyc, signer);
-    const g = await fetchHFycGlobal(addresses);
+    const h = getLyc(addresses.lyc, signer);
+    const g = await fetchLycGlobal(addresses);
     const sharesMinted = quoteMint(g, usdAmount);
     const receipt = await (await sendReplacing(address, (o) => h.mintWithUsdg(usdAmount, o), 2_000_000n)).wait();
-    const { logHfycMint } = await import("./sessionLog");
-    logHfycMint({
+    const { logLycMint } = await import("./sessionLog");
+    logLycMint({
       shares: sharesMinted.toString(),
       usdValue: usdAmount.toString(),
       paidInEth: false,
@@ -203,20 +203,20 @@ export async function mintWithUsdg(addresses: DeployedAddresses, usdAmount: bigi
   });
 }
 
-/// Mint HFyc with ETH. The protocol sells it for cash in the same transaction, so what backs the
+/// Mint LYC with ETH. The protocol sells it for cash in the same transaction, so what backs the
 /// shares is dollars from the moment they exist -- there is no window where a dollar claim is
 /// sitting on collateral that can move against it.
 export async function mintWithEth(addresses: DeployedAddresses, ethAmount: bigint) {
   await assertWalletSeesApp(addresses.factory);
   return withActiveSigner(async ({ signer, address }) => {
-    const h = getHFyc(addresses.hfyc, signer);
-    const g = await fetchHFycGlobal(addresses);
+    const h = getLyc(addresses.lyc, signer);
+    const g = await fetchLycGlobal(addresses);
     const ethPrice = await fetchCollateralPriceUsd(addresses.oracle);
     const usdValue = (ethAmount * ethPrice) / WAD;
     const sharesMinted = quoteMint(g, usdValue);
     const receipt = await (await sendReplacing(address, (o) => h.mintWithEth({ value: ethAmount, ...o }), 2_000_000n)).wait();
-    const { logHfycMint } = await import("./sessionLog");
-    logHfycMint({
+    const { logLycMint } = await import("./sessionLog");
+    logLycMint({
       shares: sharesMinted.toString(),
       usdValue: usdValue.toString(),
       paidInEth: true,
@@ -225,7 +225,7 @@ export async function mintWithEth(addresses: DeployedAddresses, ethAmount: bigin
   });
 }
 
-/// Mint HFyc with a listed collateral ERC-20 directly -- cbBTC today, whatever the pool lists
+/// Mint LYC with a listed collateral ERC-20 directly -- cbBTC today, whatever the pool lists
 /// tomorrow. `tokenUsdPriceWad` is that collateral's own oracle mark: the pool values the deposit
 /// off the collateral's registry entry on-chain, and the caller prices it with the same feed for
 /// the share estimate and the ledger. The sell-for-cash happens inside the same transaction, so
@@ -239,17 +239,17 @@ export async function mintWithCollateral(
   await assertWalletSeesApp(addresses.factory);
   return withActiveSigner(async ({ signer, address }) => {
     const q = new ethers.Contract(token, ERC20_ABI, signer);
-    const allowance: bigint = await q.allowance(address, addresses.hfyc);
+    const allowance: bigint = await q.allowance(address, addresses.lyc);
     if (allowance < amount) {
-      await (await q.approve(addresses.hfyc, ethers.MaxUint256, await walletTxOverrides(address, 200_000n))).wait();
+      await (await q.approve(addresses.lyc, ethers.MaxUint256, await walletTxOverrides(address, 200_000n))).wait();
     }
-    const h = getHFyc(addresses.hfyc, signer);
-    const g = await fetchHFycGlobal(addresses);
+    const h = getLyc(addresses.lyc, signer);
+    const g = await fetchLycGlobal(addresses);
     const usdValue = (amount * tokenUsdPriceWad) / WAD;
     const sharesMinted = quoteMint(g, usdValue);
     const receipt = await (await sendReplacing(address, (o) => h.mintWithCollateral(token, amount, o), 2_000_000n)).wait();
-    const { logHfycMint } = await import("./sessionLog");
-    logHfycMint({
+    const { logLycMint } = await import("./sessionLog");
+    logLycMint({
       shares: sharesMinted.toString(),
       usdValue: usdValue.toString(),
       paidInEth: false,
@@ -304,12 +304,12 @@ export function fundingApyFromApr(aprWad: bigint): number {
 ///
 /// Anyone who wants a specific token converts it themselves afterwards -- their transaction, their
 /// slippage tolerance, and a failed conversion costs a retry instead of trapping the withdrawal.
-export async function redeemHfyc(addresses: DeployedAddresses, shares: bigint) {
+export async function redeemLyc(addresses: DeployedAddresses, shares: bigint) {
   await assertWalletSeesApp(addresses.factory);
   const peelFrom = await fetchPeelOrder(addresses);
-  const { logError, logHfycRedeem } = await import("./sessionLog");
+  const { logError, logLycRedeem } = await import("./sessionLog");
   return withActiveSigner(async ({ signer, address }) => {
-    const h = getHFyc(addresses.hfyc, signer);
+    const h = getLyc(addresses.lyc, signer);
     try {
       const tx = await sendReplacing(
         address,
@@ -317,8 +317,8 @@ export async function redeemHfyc(addresses: DeployedAddresses, shares: bigint) {
         8_000_000n,
       );
       const receipt = await tx.wait();
-      const q = quoteRedeem(await fetchHFycGlobal(addresses), shares);
-      logHfycRedeem({
+      const q = quoteRedeem(await fetchLycGlobal(addresses), shares);
+      logLycRedeem({
         kind: "in-kind",
         shares: shares.toString(),
         usdOut: q.usdOut.toString(),
@@ -352,7 +352,7 @@ export async function freeIdleCash(addresses: DeployedAddresses): Promise<number
 }
 
 /// What a deposit mints right now, at the prevailing NAV.
-export function quoteMint(g: HFycGlobal, usdIn: bigint): bigint {
+export function quoteMint(g: LycGlobal, usdIn: bigint): bigint {
   if (usdIn <= 0n || g.nav === 0n) return 0n;
   return (usdIn * WAD) / g.nav;
 }
@@ -362,7 +362,7 @@ export function quoteMint(g: HFycGlobal, usdIn: bigint): bigint {
 /// fee at all. "Covered" itself has a tolerance band (coveredCrWad, not a bare > WAD) so routine
 /// stablecoin noise -- USDG at $0.9998 on an ordinary day -- doesn't read as impairment; see
 /// EarnPool.COVERED_CR_WAD's own doc comment.
-export function quoteRedeem(g: HFycGlobal, shares: bigint): { usdOut: bigint; covered: boolean } {
+export function quoteRedeem(g: LycGlobal, shares: bigint): { usdOut: bigint; covered: boolean } {
   if (shares <= 0n || g.supply === 0n) return { usdOut: 0n, covered: true };
   const covered = g.globalCr > g.coveredCrWad;
   if (covered) {
@@ -381,14 +381,14 @@ export function parseEthInput(value: string): bigint {
 }
 
 /// FIFO lot for tracking cost basis
-export type HfycLot = {
+export type LycLot = {
   shares: bigint;
   costPerShare: bigint; // in USD (WAD)
   timestamp: number;
 };
 
-/// Transaction record for HFyc history
-export type HfycTx = {
+/// Transaction record for LYC history
+export type LycTx = {
   type: "mint" | "redeem";
   shares: bigint;
   valueUsd: bigint;
@@ -398,24 +398,24 @@ export type HfycTx = {
 };
 
 /// PnL result from FIFO calculation
-export type HfycPnl = {
+export type LycPnl = {
   realizedPnl: bigint;
   unrealizedPnl: bigint;
   totalInvested: bigint;
   avgCostBasis: bigint;
-  lots: HfycLot[];
-  history: HfycTx[];
+  lots: LycLot[];
+  history: LycTx[];
 };
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
-/// Fetch HFyc Transfer events for a user and compute FIFO PnL
-export async function fetchHfycPnl(
+/// Fetch LYC Transfer events for a user and compute FIFO PnL
+export async function fetchLycPnl(
   addresses: DeployedAddresses,
   holder: string,
   currentNav: bigint
-): Promise<HfycPnl> {
-  const h = getHFyc(addresses.hfyc);
+): Promise<LycPnl> {
+  const h = getLyc(addresses.lyc);
   const provider = getProvider();
 
   // Fetch Transfer events: mints (from zero address) and burns (to zero address)
@@ -429,7 +429,7 @@ export async function fetchHfycPnl(
   ]);
 
   // Combine and sort by block number
-  const txs: HfycTx[] = [];
+  const txs: LycTx[] = [];
 
   for (const e of mintEvents) {
     const block = await provider.getBlock(e.blockNumber);
@@ -463,7 +463,7 @@ export async function fetchHfycPnl(
   txs.sort((a, b) => a.timestamp - b.timestamp);
 
   // FIFO calculation
-  const lots: HfycLot[] = [];
+  const lots: LycLot[] = [];
   let realizedPnl = 0n;
   let totalInvested = 0n;
   let totalSharesRedeemed = 0n;

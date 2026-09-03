@@ -1,4 +1,4 @@
-import { getHFyc, getLaunch, getProvider, tryPairLaunch } from "./launchpad";
+import { getLyc, getLaunch, getProvider, tryPairLaunch } from "./launchpad";
 
 export type LeverageBand = {
   achieved: number;
@@ -16,7 +16,7 @@ export type LeverageBand = {
   pairingFeesPaidUsd: bigint;
 };
 
-/// Per-coin leverage: L_i = TVL_i / junior_i. Each launch is its own pool. HFyc is a shared
+/// Per-coin leverage: L_i = TVL_i / junior_i. Each launch is its own pool. LYC is a shared
 /// cash book — pairing pulls idle USDG equal to that coin's junior USD, it does not average
 /// leverage across coins.
 export async function fetchLeverageBand(launchAddress: string): Promise<LeverageBand | null> {
@@ -25,7 +25,7 @@ export async function fetchLeverageBand(launchAddress: string): Promise<Leverage
     const graduated: boolean = await launch.graduated();
     if (!graduated) return null;
 
-    const [paired, leverageEnabled, leverageWad, tvlUsd, seniorUsd, hfycAddr, occupancyPaidUsd, pairingFeesPaidUsd] =
+    const [paired, leverageEnabled, leverageWad, tvlUsd, seniorUsd, lycAddr, occupancyPaidUsd, pairingFeesPaidUsd] =
       (await Promise.all([
         launch.paired(),
         launch.leverageEnabled(),
@@ -37,7 +37,7 @@ export async function fetchLeverageBand(launchAddress: string): Promise<Leverage
         launch.pairingFeesPaidUsd(),
       ])) as [boolean, boolean, bigint, bigint, bigint, string, bigint, bigint];
 
-    const idleUsdg: bigint = await getHFyc(hfycAddr).idleUsdg();
+    const idleUsdg: bigint = await getLyc(lycAddr).idleUsdg();
     const juniorUsd = tvlUsd > seniorUsd ? tvlUsd - seniorUsd : 0n;
 
     const target = 2.0;

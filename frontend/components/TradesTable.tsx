@@ -248,7 +248,7 @@ export default function TradesTable({
                         t.rebalanceType === "protect" ? `Vault ${quoteSymbol} sold for USDG — leverage down` :
                         t.rebalanceType === "relever" ? "Idle USDG bought vault collateral — leverage up" :
                         t.rebalanceType === "release" ? `Vault ${quoteSymbol} sold, senior moved to a louder coin` :
-                        t.rebalanceType === "paired" ? `First senior paired after graduation — ${t.skimmedUsd ? `$${t.skimmedUsd.toFixed(2)}` : ""} attached at ${t.newLoopLev?.toFixed(2) ?? "2.00"}x (HFyc → pool, traced via 0x81B4…)` :
+                        t.rebalanceType === "paired" ? `First senior paired after graduation — ${t.skimmedUsd ? `$${t.skimmedUsd.toFixed(2)}` : ""} attached at ${t.newLoopLev?.toFixed(2) ?? "2.00"}x (LYC → pool, traced via 0x81B4…)` :
                         "Protocol operation"
                       }
                     >

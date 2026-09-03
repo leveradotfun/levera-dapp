@@ -14,7 +14,7 @@ $$
 f(L) = \underbrace{125\ \text{bps}}_{\text{flat}} + \underbrace{\sigma(L)}_{\text{leverage surcharge}}
 $$
 
-Charged on the **quote leg** — ETH for a WETH-quoted coin, cbBTC for a cbBTC-quoted one — pump.fun-shaped. The flat part is never raised to feed the Earn
+Charged on the **quote leg** — ETH for a WETH-quoted coin, cbBTC for a cbBTC-quoted one. The flat part is never raised to feed the Earn
 Pool. The surcharge is not income at all — see below.
 
 Buyer pays fee-inclusive; seller receives fee-exclusive.
@@ -96,8 +96,8 @@ On a 2x pair this raises `juniorEth` and therefore the quote, which is the corre
 
 | Slice | 2x bps | 1x bps | Destination |
 |---|---|---|---|
-| Creator | 30 | 30 | The coin's **quote asset** (claimable — cbBTC on a cbBTC coin, WETH on a WETH one), or HFyc mint-at-NAV **only if 2x and the creator opted in** |
-| Protocol | 45 | 95 | HFyc mint-at-NAV to the treasury (backed; NAV unchanged) |
+| Creator | 30 | 30 | The coin's **quote asset** (claimable — cbBTC on a cbBTC coin, WETH on a WETH one), or LYC mint-at-NAV **only if 2x and the creator opted in** |
+| Protocol | 45 | 95 | LYC mint-at-NAV to the treasury (backed; NAV unchanged) |
 | Earn Pool holders | 50 | **0** | USDG in, **no mint**, NAV up. **2x only.** |
 
 On-chain this is `Launch._accrueFeeEth`:
@@ -106,10 +106,10 @@ On-chain this is `Launch._accrueFeeEth`:
 - If `!leverageEnabled`, the rest ($95$ bps of notional) is protocol. Return. No holder slice.
 
 <Note>
-**A 1x creator cannot opt into HFyc.** `LaunchpadFactory.createLaunch` requires
+**A 1x creator cannot opt into LYC.** `LaunchpadFactory.createLaunch` requires
 `leverageEnabled || !creatorFeeInHfyc` ("1x quote fees"): a 1x coin never pairs against the Earn
-Pool, so paying its creator in HFyc would mint them senior out of trade fees with no occupancy and
-no pairing behind it. A 2x creator chooses freely — the quote asset or HFyc — and the choice is
+Pool, so paying its creator in LYC would mint them senior out of trade fees with no occupancy and
+no pairing behind it. A 2x creator chooses freely — the quote asset or LYC — and the choice is
 frozen at creation.
 </Note>
 

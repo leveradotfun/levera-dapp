@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import ConnectWalletButton from "@/components/ConnectWalletButton";
+import TokenIcon from "@/components/TokenIcon";
 import { formatWad } from "@/lib/launchpad";
 
 function sanitizeNumericInput(v: string): string {
@@ -226,7 +227,8 @@ export default function SwapCard({
             inputMode="decimal"
             className="min-w-0 flex-1 bg-transparent font-mono text-xl text-foreground outline-none placeholder:text-muted"
           />
-          <span className="px-2 py-1 rounded-lg bg-surface-2 text-sm font-medium text-foreground">
+          <span className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-surface-2 text-sm font-medium text-foreground">
+            <TokenIcon symbol={inputToken.symbol} size={16} />
             {inputToken.symbol}
           </span>
         </div>
@@ -249,7 +251,8 @@ export default function SwapCard({
         </div>
         <div className="flex items-center gap-2">
           <span className="flex-1 font-mono text-xl text-foreground">{quoteLabel || "0"}</span>
-          <span className="px-2 py-1 rounded-lg bg-surface-2 text-sm font-medium text-foreground">
+          <span className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-surface-2 text-sm font-medium text-foreground">
+            <TokenIcon symbol={outputToken.symbol} size={16} />
             {outputToken.symbol}
           </span>
         </div>

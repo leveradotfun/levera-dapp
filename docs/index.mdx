@@ -1,37 +1,37 @@
 ---
-title: HoodFrenzy
-description: A Pump.fun-style memecoin launchpad on Robinhood Chain, with an optional 2x overlay rented from a dollar-senior Earn Pool.
+title: Levera
+description: A memecoin launchpad on Robinhood Chain, with an optional 2x overlay rented from a dollar-senior Earn Pool.
 icon: house
 ---
 
-HoodFrenzy is a memecoin launchpad. Coins are the product. **HFyc** (Hood Frenzy Yield Coin) is dollar-senior credit that **2x** coins rent, held in the **Earn Pool**. There is no Morpho, no mint/burn of the meme after launch, and no donating the raise into a Uniswap LP so dumpers can steal it.
+Levera is a memecoin launchpad. Coins are the product. **LYC** (Levera Yield Coin) is dollar-senior credit that **2x** coins rent, held in the **Earn Pool**. There is no Morpho, no mint/burn of the meme after launch, and no donating the raise into a Uniswap LP so dumpers can steal it.
 
 <Info>
-  $1 is the **issue price** of HFyc and the healthy-NAV target. It is not a peg the protocol defends with someone else's collateral.
+  $1 is the **issue price** of LYC and the healthy-NAV target. It is not a peg the protocol defends with someone else's collateral.
 </Info>
 
 ## One-sentence product
 
-People deposit USDG (or ETH sold to USDG on arrival) and hold **HFyc** — a single USD-senior token that starts at $\$1$ and only rises from real inflows. Memecoins are the junior claim on the same ETH: they take **all** collateral price movement, pay HFyc in fees and occupancy rent, and can be delevered when ETH dumps.
+People deposit USDG (or ETH sold to USDG on arrival) and hold **LYC** — a single USD-senior token that starts at $\$1$ and only rises from real inflows. Memecoins are the junior claim on the same ETH: they take **all** collateral price movement, pay LYC in fees and occupancy rent, and can be delevered when ETH dumps.
 
 ## The split
 
 | Claim | Token | What they get | What they pay |
 |---|---|---|---|
-| Senior | HFyc | Dollar NAV. No ETH upside once paired. | First-loss **after** junior is gone (−50% ETH gap at 2x). |
+| Senior | LYC | Dollar NAV. No ETH upside once paired. | First-loss **after** junior is gone (−50% ETH gap at 2x). |
 | Junior | The memecoin | 100% of ETH delta, levered toward $2\times$. | Trade fees + occupancy rent. Leverage is rented and can fall. |
-| Protocol | Fee-minted HFyc | Always liquid. Aligned with the senior. | Never paid raw ETH into the treasury. |
-| Creator | ETH, or HFyc if 2x and opted in | 30 bps of the 125 bps trade fee. | Toggle is immutable at create. 1x creators are ETH-only. |
+| Protocol | Fee-minted LYC | Always liquid. Aligned with the senior. | Never paid raw ETH into the treasury. |
+| Creator | ETH, or LYC if 2x and opted in | 30 bps of the 125 bps trade fee. | Toggle is immutable at create. 1x creators are ETH-only. |
 
 ## Two kinds of coin
 
 Toggle **2x** at creation. The flag is immutable.
 
-- **1x.** Ordinary Pump.fun-style curve, then a TOKEN/ETH AMM. Never pulls HFyc. Trade fee is 30 bps creator / 95 bps protocol / **0 to HFyc holders**. Creator fees are ETH only.
+- **1x.** Ordinary bonding curve, then a TOKEN/ETH AMM. Never pulls LYC. Trade fee is 30 bps creator / 95 bps protocol / **0 to LYC holders**. Creator fees are ETH only.
 - **2x.** Same curve. At graduation the coin borrows idle Earn Pool cash, buys ETH, and parks it in `vaultEth`. Spot is priced off **junior ETH** so it moves $\sim 2\times$ with ETH **without** putting vault ETH in the dumpable book. Trade fee is 30 / 45 / 50 plus a leverage surcharge that stays in the pool as cushion. Occupancy rent and the pairing 50 bps apply.
 
 <Warning>
-  2x means a **−50% ETH gap in one oracle print** wipes junior. Further drop is first-loss on HFyc. That is the product, not a bug.
+  2x means a **−50% ETH gap in one oracle print** wipes junior. Further drop is first-loss on LYC. That is the product, not a bug.
 </Warning>
 
 ## The three numbers that run the book
@@ -50,7 +50,7 @@ Target leverage is $L^\star = 2$. As a pool drifts away from it the protocol **p
 price at which anyone can take collateral off it, or give collateral to it — and where two pools want
 opposite things they are [netted directly](/protocol/netting) with no market involved at all. The
 protocol never trades for itself, so the moment it most needs to de-risk is not the moment a thin
-book can stop it. See [Leverage and vHFyc](/protocol/leverage) and [Rebalance routes](/protocol/routes).
+book can stop it. See [Leverage and vLYC](/protocol/leverage) and [Rebalance routes](/protocol/routes).
 
 The Earn Pool itself:
 

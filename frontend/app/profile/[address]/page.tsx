@@ -26,12 +26,12 @@ import { Skeleton } from "@/components/Skeleton";
 import { tradesFor } from "@/lib/launchStats";
 import PriceLabel from "@/components/PriceLabel";
 import { TxLink } from "@/components/ExplorerLink";
-import { HFycGlobal, HFycPosition, fetchHFycGlobal, fetchHFycPosition, fetchHfycPnl, HfycPnl } from "@/lib/hfyc";
+import { LycGlobal, LycPosition, fetchLycGlobal, fetchLycPosition, fetchLycPnl, LycPnl } from "@/lib/lyc";
 import { useXAuth } from "@/lib/useXAuth";
 import { loadXProfile } from "@/lib/xAuth";
 
 type CreatedRow = { launch: LaunchSummary; fees: CreatorFees };
-type Tab = "open" | "closed" | "activity" | "hfyc";
+type Tab = "open" | "closed" | "activity" | "lyc";
 
 const PALETTE = ["#ECE3D1", "#22c55e", "#38bdf8", "#f472b6", "#fbbf24", "#a78bfa", "#fb7185", "#34d399"];
 const EMOJI = ["🐕", "🚀", "🌙", "🐸", "💎", "🔥", "⚡", "🦍", "🍌", "👽"];
@@ -68,9 +68,9 @@ export default function ProfileAddressPage() {
   const [activeTab, setActiveTab] = useState<Tab>("open");
   const [timeframe, setTimeframe] = useState<"1D" | "1W" | "1M">("1D");
   const [collateralPrice, setCollateralPrice] = useState<bigint>(0n);
-  const [hfycGlobal, setHfycGlobal] = useState<HFycGlobal | null>(null);
-  const [hfycPosition, setHfycPosition] = useState<HFycPosition | null>(null);
-  const [hfycPnl, setHfycPnl] = useState<HfycPnl | null>(null);
+  const [lycGlobal, setLycGlobal] = useState<LycGlobal | null>(null);
+  const [lycPosition, setLycPosition] = useState<LycPosition | null>(null);
+  const [lycPnl, setLycPnl] = useState<LycPnl | null>(null);
 
   const targetAddress = profileAddress;
 
@@ -79,19 +79,19 @@ export default function ProfileAddressPage() {
       setCreated(null);
       setHoldings(null);
       setClaimHistory([]);
-      setHfycGlobal(null);
-      setHfycPosition(null);
-      setHfycPnl(null);
+      setLycGlobal(null);
+      setLycPosition(null);
+      setLycPnl(null);
       return;
     }
     try {
       const collateralPriceUsd = await fetchCollateralPriceUsd(addresses.oracle);
       setCollateralPrice(collateralPriceUsd);
-      const [mine, held, hfycG, hfycP] = await Promise.all([
+      const [mine, held, lycG, lycP] = await Promise.all([
         fetchLaunchesByCreator(addresses, targetAddress),
         fetchHoldings(addresses, targetAddress),
-        fetchHFycGlobal(addresses),
-        fetchHFycPosition(addresses, targetAddress),
+        fetchLycGlobal(addresses),
+        fetchLycPosition(addresses, targetAddress),
       ]);
       const rows = await Promise.all(
         mine.map(async (launch) => ({
@@ -101,11 +101,11 @@ export default function ProfileAddressPage() {
       );
       setCreated(rows);
       setHoldings(held);
-      setHfycGlobal(hfycG);
-      setHfycPosition(hfycP);
-      if (hfycG) {
-        const pnl = await fetchHfycPnl(addresses, targetAddress, hfycG.nav);
-        setHfycPnl(pnl);
+      setLycGlobal(lycG);
+      setLycPosition(lycP);
+      if (lycG) {
+        const pnl = await fetchLycPnl(addresses, targetAddress, lycG.nav);
+        setLycPnl(pnl);
       }
       const history = await fetchClaimHistory(mine, targetAddress, collateralPriceUsd);
       setClaimHistory(history);
@@ -281,9 +281,9 @@ export default function ProfileAddressPage() {
 
         {/* Tabs */}
         <div className="flex items-center gap-2">
-          {(["open", "closed", "activity", "hfyc"] as const).map((tab) => (
+          {(["open", "closed", "activity", "lyc"] as const).map((tab) => (
             <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === tab ? "bg-accent text-accent-ink" : "bg-surface text-muted hover:text-foreground"}`}>
-              {tab === "hfyc" ? "HFyc" : tab.charAt(0).toUpperCase() + tab.slice(1)}
+              {tab === "lyc" ? "LYC" : tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
           ))}
         </div>
@@ -363,7 +363,7 @@ export default function ProfileAddressPage() {
                         fees.inHfyc ? (
                           <div className="text-right">
                             <div className="text-[10px] uppercase tracking-wide text-muted">Fee denom</div>
-                            <div className="font-mono text-sm font-semibold text-foreground">HFyc</div>
+                            <div className="font-mono text-sm font-semibold text-foreground">LYC</div>
                             <div className="text-[10px] text-muted">minted at harvest, withdraw anytime</div>
                           </div>
                         ) : (

@@ -5,25 +5,25 @@ import { ethers } from "ethers";
 import { useAppState } from "@/lib/appState";
 import { useWallet } from "@/lib/wallet";
 import {
-  HFycGlobal,
-  HFycPosition,
-  fetchHFycGlobal,
-  fetchHFycPosition,
+  LycGlobal,
+  LycPosition,
+  fetchLycGlobal,
+  fetchLycPosition,
   mintWithCollateral,
   mintWithEth,
   mintWithUsdg,
   parseEthInput,
   quoteMint,
   quoteRedeem,
-  redeemHfyc,
-} from "@/lib/hfyc";
+  redeemLyc,
+} from "@/lib/lyc";
 import { WAD, fetchCollateralPriceUsd, formatWad, usd } from "@/lib/launchpad";
 import { parseQuote } from "@/lib/quoteAssets";
 import { toastError, toastSuccess } from "@/lib/toast";
 import { TX_TIMEOUT_LONG_MS, withTimeout } from "@/lib/txTimeout";
 import ConnectWalletButton from "@/components/ConnectWalletButton";
 import { spendableEth } from "@/lib/wallet";
-import { formatApr, useHFycMetrics, NavSample } from "@/lib/hfycMetrics";
+import { formatApr, useLycMetrics, NavSample } from "@/lib/lycMetrics";
 import SwapCard from "@/components/SwapCard";
 
 type Tab = "position" | "transactions";
@@ -31,8 +31,8 @@ type Tab = "position" | "transactions";
 export default function EarnPage() {
   const { addresses } = useAppState();
   const wallet = useWallet(addresses);
-  const [g, setG] = useState<HFycGlobal | null>(null);
-  const [pos, setPos] = useState<HFycPosition | null>(null);
+  const [g, setG] = useState<LycGlobal | null>(null);
+  const [pos, setPos] = useState<LycPosition | null>(null);
   const [depositAmt, setDepositAmt] = useState("");
   // ETH = native gas. CBBTC = the second listed collateral, when the deployment has it; the
   // option simply does not render otherwise.
@@ -44,14 +44,14 @@ export default function EarnPage() {
   const [tab, setTab] = useState<Tab>("position");
   const [swapMode, setSwapMode] = useState<"buy" | "sell">("buy");
   const [chartPeriod, setChartPeriod] = useState<"5m" | "1h" | "4h" | "1d" | "all">("all");
-  const { apy, samples } = useHFycMetrics(addresses);
+  const { apy, samples } = useLycMetrics(addresses);
 
   const refresh = useCallback(async () => {
     if (!addresses) return;
     try {
       const [gg, pp, px, btcPx] = await Promise.all([
-        fetchHFycGlobal(addresses),
-        wallet.address ? fetchHFycPosition(addresses, wallet.address) : Promise.resolve(null),
+        fetchLycGlobal(addresses),
+        wallet.address ? fetchLycPosition(addresses, wallet.address) : Promise.resolve(null),
         fetchCollateralPriceUsd(addresses.oracle),
         addresses.cbbtcOracle ? fetchCollateralPriceUsd(addresses.cbbtcOracle) : Promise.resolve(0n),
       ]);
@@ -160,11 +160,11 @@ export default function EarnPage() {
       <div className="flex-1 min-w-0 space-y-4">
         {/* Stats bar */}
         <div className="flex items-stretch gap-0 overflow-hidden rounded-xl border border-border bg-card">
-          <StatBlock label="HFyc Price" value={`$${formatWad(g?.nav ?? 0n, 4)}`}
+          <StatBlock label="LYC Price" value={`$${formatWad(g?.nav ?? 0n, 4)}`}
             badge={navReturn !== 0 ? `${navReturn >= 0 ? "+" : ""}${navReturn.toFixed(2)}%` : "+0.00%"}
             badgeColor={navReturn >= 0 ? "text-green-400 bg-green-400/10" : "text-red-400 bg-red-400/10"} accent />
           <div className="w-px bg-border" />
-          <StatBlock label="HFyc APY" value={apy.h24.ready && apy.h24.simpleApr !== null ? formatApr(apy.h24.simpleApr) : "—"} accent />
+          <StatBlock label="LYC APY" value={apy.h24.ready && apy.h24.simpleApr !== null ? formatApr(apy.h24.simpleApr) : "—"} accent />
           <div className="w-px bg-border" />
           <StatBlock label="Market Cap" value={marketCap >= 1e9 ? `$${(marketCap / 1e9).toFixed(2)}B` : marketCap >= 1e6 ? `$${(marketCap / 1e6).toFixed(2)}M` : `$${marketCap.toFixed(2)}`} />
         </div>
@@ -229,16 +229,16 @@ export default function EarnPage() {
           <SwapCard
             mode={swapMode}
             onModeChange={(m) => { setSwapMode(m); setDepositAmt(""); setRedeemAmt(""); }}
-            buyLabel="Buy HFyc" sellLabel="Sell HFyc"
-            inputToken={{ symbol: swapMode === "buy" ? paySymbol : "HFYC", balance: swapMode === "buy" ? payBalance : (pos?.balance ?? 0n) }}
-            outputToken={{ symbol: swapMode === "buy" ? "HFYC" : "USDG", balance: 0n }}
+            buyLabel="Buy LYC" sellLabel="Sell LYC"
+            inputToken={{ symbol: swapMode === "buy" ? paySymbol : "LYC", balance: swapMode === "buy" ? payBalance : (pos?.balance ?? 0n) }}
+            outputToken={{ symbol: swapMode === "buy" ? "LYC" : "USDG", balance: 0n }}
             value={activeValue} onValueChange={setActiveValue}
-            quoteLabel={swapMode === "buy" ? `${formatWad(mintQuote, 4)} HFYC` : `${usd(redeemQuote.usdOut)}${!redeemQuote.covered && redeemWei > 0n ? " (pro-rata)" : ""}`}
+            quoteLabel={swapMode === "buy" ? `${formatWad(mintQuote, 4)} LYC` : `${usd(redeemQuote.usdOut)}${!redeemQuote.covered && redeemWei > 0n ? " (pro-rata)" : ""}`}
             inputUsdLabel={earnInputUsdLabel}
             outputUsdLabel={earnOutputUsdLabel}
             busy={busy !== null} isConnected={wallet.isConnected} connectLabel="Connect wallet to trade"
             buyButtonLabel={busy === "Mint" ? "Minting..." : `Mint with ${paySymbol}`}
-            sellButtonLabel={busy === "Redeem" ? "Redeeming..." : "Sell HFyc"}
+            sellButtonLabel={busy === "Redeem" ? "Redeeming..." : "Sell LYC"}
             onMax={() => { if (swapMode === "buy") { setDepositAmt(payWith === "CBBTC" ? ethers.formatUnits(payBalance, 8) : formatWad(payBalance, 4)); } else { setRedeemAmt(pos ? formatWad(pos.balance, 6) : "0"); } }}
             warning={!redeemQuote.covered && redeemWei > 0n ? <div className="rounded-lg bg-amber-400/10 border border-amber-400/20 px-3 py-2 text-xs text-amber-400">Book is impaired — you receive pro-rata of assets, not $1.</div> : undefined}
             onBuy={() =>
@@ -250,10 +250,10 @@ export default function EarnPage() {
                     : payWith === "CBBTC"
                       ? mintWithCollateral(addresses, addresses.cbbtc!, depositWei, cbbtcPriceWad)
                       : mintWithUsdg(addresses, depositWei),
-                "Minted HFyc.",
+                "Minted LYC.",
               )
             }
-            onSell={() => run("Redeem", () => redeemHfyc(addresses, redeemWei), "Redeemed.")}
+            onSell={() => run("Redeem", () => redeemLyc(addresses, redeemWei), "Redeemed.")}
           />
         </div>
       </div>
@@ -328,10 +328,10 @@ function NavChart({ samples }: { samples: NavSample[] }) {
   );
 }
 
-function PositionPanel({ pos, g, wallet }: { pos: HFycPosition | null; g: HFycGlobal | null; wallet: ReturnType<typeof useWallet> }) {
+function PositionPanel({ pos, g, wallet }: { pos: LycPosition | null; g: LycGlobal | null; wallet: ReturnType<typeof useWallet> }) {
   if (!wallet.isConnected) return (<div className="rounded-xl border border-dashed border-border p-8 text-center"><p className="text-sm text-muted mb-3">Connect a wallet to see your position.</p><ConnectWalletButton className="rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-accent-ink" /></div>);
   if (!pos || !g) return (<div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[...Array(4)].map((_, i) => (<div key={i} className="rounded-xl border border-border bg-surface p-4 animate-pulse"><div className="h-3 w-16 bg-surface-2 rounded" /><div className="h-5 w-24 bg-surface-2 rounded mt-2" /></div>))}</div>);
-  return (<div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><PosStat label="HFYC held" value={formatWad(pos.balance, 4)} /><PosStat label="Value" value={usd((pos.balance * g.nav) / WAD)} /><PosStat label="Max redeemable" value={formatWad(pos.maxRedeemable, 4)} /><PosStat label="Unlocked" value={formatWad(pos.unlocked, 4)} /></div>);
+  return (<div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><PosStat label="LYC held" value={formatWad(pos.balance, 4)} /><PosStat label="Value" value={usd((pos.balance * g.nav) / WAD)} /><PosStat label="Max redeemable" value={formatWad(pos.maxRedeemable, 4)} /><PosStat label="Unlocked" value={formatWad(pos.unlocked, 4)} /></div>);
 }
 
 function PosStat({ label, value }: { label: string; value: string }) {

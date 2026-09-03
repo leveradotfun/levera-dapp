@@ -7,7 +7,7 @@ import {
   fetchLaunchAddresses,
   getLaunch,
   getProvider,
-  getHFyc,
+  getLyc,
   keeperAccruePools,
   keeperGraduate,
   keeperHarvest,
@@ -61,7 +61,7 @@ export function useProtocolKeeper(addresses: DeployedAddresses | null) {
           launch.recentVolumeUsd() as Promise<bigint>,
           launch.leverageWad() as Promise<bigint>,
           // Renamed from *FeeEth to *FeeQuote when multi-collateral landed (fees are not always
-          // literally ETH -- a cbBTC coin books cbBTC). holderFeeQuote is HFyc's leverage-scaled
+          // literally ETH -- a cbBTC coin books cbBTC). holderFeeQuote is LYC's leverage-scaled
           // trading-fee slice (up to 5 of the 50 bps remainder, scaled by seniorUsd/memeNAV on
           // this pool) -- real again as of the 50/45/5 fee redesign.
           launch.holderFeeQuote() as Promise<bigint>,
@@ -144,21 +144,21 @@ export function useProtocolKeeper(addresses: DeployedAddresses | null) {
         // Split idle across hungry 2x coins so one graduate does not swallow the whole deposit.
         let idle = 0n;
         try {
-          idle = (await getHFyc(addresses.hfyc).idleUsdg()) as bigint;
+          idle = (await getLyc(addresses.lyc).idleUsdg()) as bigint;
         } catch {
           idle = 0n;
         }
         const paired = snaps.filter((s) => s.leverageEnabled && s.graduated && s.senior > 0n).map((s) => s.addr);
         if (paired.length > 0) {
           try {
-            await keeperAccruePools(addresses.hfyc, paired);
+            await keeperAccruePools(addresses.lyc, paired);
           } catch {
             // views still include pending occupancy; this is a best-effort settle
           }
         }
 
         // Holder 50 bps of every trade sits as ETH on the launch until harvest(). It is not in
-        // TVL and not in HFyc cash yield — without this tick, that slice never reaches holders.
+        // TVL and not in LYC cash yield — without this tick, that slice never reaches holders.
         for (const s of snaps) {
           if (stopped) break;
           if (s.harvestableEth > 0n) {
@@ -178,7 +178,7 @@ export function useProtocolKeeper(addresses: DeployedAddresses | null) {
           if (s.paired) await sweepAndCorrect(s.addr);
         }
         try {
-          idle = (await getHFyc(addresses.hfyc).idleUsdg()) as bigint;
+          idle = (await getLyc(addresses.lyc).idleUsdg()) as bigint;
         } catch {
           // keep last read
         }

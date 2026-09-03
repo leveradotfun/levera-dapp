@@ -8,7 +8,7 @@ When the raise is met or the 800M is gone, `_graduate()`:
 
 1. Marks the curve closed.
 2. Wraps the raise as WETH and seeds `MemePair` (Uniswap V2-style $xy=k$).
-3. If 2x is on, `_tryPair()` borrows idle HFyc USDG, buys real ETH, and parks it in `vaultEth`.
+3. If 2x is on, `_tryPair()` borrows idle LYC USDG, buys real ETH, and parks it in `vaultEth`.
 
 ## Two ETH buckets after that
 
@@ -50,13 +50,13 @@ $$
 \text{junior ETH} &= 6.9 \\
 \text{senior ETH} &= 6.9 \quad \text{(bought with idle USDG)} \\
 \text{pool} &= 13.8\ \mathrm{ETH} = 41400 \\
-\text{HFyc liability up} &= 20700 \\
+\text{LYC liability up} &= 20700 \\
 J &= 20700 \\
 L &= 2.0
 \end{aligned}
 $$
 
-HFyc shares are **not** minted at pair. The idle USDG already had shares outstanding; pairing converts cash to vault ETH and moves that slice of liability from idle to $S_i$. NAV unchanged by the conversion itself.
+LYC shares are **not** minted at pair. The idle USDG already had shares outstanding; pairing converts cash to vault ETH and moves that slice of liability from idle to $S_i$. NAV unchanged by the conversion itself.
 
 ## Pairing fee
 
@@ -68,7 +68,7 @@ $$
 
 Taken from **vault ETH**, swapped to USDG, `depositYield` (unminted). A coin that pairs, dumps, and never trades still pays for the attach and for the rebalancing that may follow. It is billed against the high-water senior, so senior that leaves and returns is not charged twice.
 
-$20700$ USD paired $\times 50$ bps $= 103.50$ USD to HFyc. Always.
+$20700$ USD paired $\times 50$ bps $= 103.50$ USD to LYC. Always.
 
 Because the fee is paid from vault ETH, attaching senior slightly **raises** leverage. Accepted.
 
@@ -78,4 +78,4 @@ There is **no** hard per-launch cap. A hard cap made the first coin on an empty 
 
 ## 1x graduation
 
-`leverageEnabled = false`: skip pairing entirely. AMM is vanilla $k = \texttt{reserveToken} \times \texttt{reserveEth}$. No occupancy, no vault, no HFyc holder slice.
+`leverageEnabled = false`: skip pairing entirely. AMM is vanilla $k = \texttt{reserveToken} \times \texttt{reserveEth}$. No occupancy, no vault, no LYC holder slice.

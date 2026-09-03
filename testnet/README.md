@@ -1,6 +1,6 @@
 # Robinhood Chain testnet deployment
 
-Deploys the full HoodFrenzy stack to **Robinhood Chain testnet** (chain `46630`) — both launchpads (WETH-quoted and cbBTC-quoted), the Earn Pool, oracles, routers, and the quote zap — and publishes `data/deployment-testnet.json` where both apps can read it.
+Deploys the full Levera stack to **Robinhood Chain testnet** (chain `46630`) — both launchpads (WETH-quoted and cbBTC-quoted), the Earn Pool, oracles, routers, and the quote zap — and publishes `data/deployment-testnet.json` where both apps can read it.
 
 This folder exists so the testnet path never has to touch `contracts/`: nothing here changes protocol source, it only composes artifacts that `forge build` already compiled. It is the documented "mock prototype" path (`docs/security/testnet.mdx`) with the deploy gap filled.
 

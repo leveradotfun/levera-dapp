@@ -1,8 +1,8 @@
-# Robinhood memecoin launchpad
+# Levera
 
-A Pump.fun-style launchpad on **Robinhood Chain** (Arbitrum Orbit, chain id **4663**) with an optional 2x overlay. Memecoins are the product. **HFyc** is dollar-senior credit that 2x coins rent, held in the **Earn Pool**. No lending-pool facade, no mint/burn of the meme after launch, and no donating the raise into a Uniswap LP so dumpers can steal it.
+A memecoin launchpad on **Robinhood Chain** (Arbitrum Orbit, chain id **4663**) with an optional 2x overlay. Memecoins are the product. **LYC** is dollar-senior credit that 2x coins rent, held in the **Earn Pool**. No lending-pool facade, no mint/burn of the meme after launch, and no donating the raise into a Uniswap LP so dumpers can steal it.
 
-Full docs: `docs/` (Mintlify — `cd docs && mint dev`). Mechanism spec: `HFYC.md`.
+Full docs: `docs/` (Mintlify — `cd docs && mint dev`). Mechanism spec: `LEVERA.md`.
 
 ## How it works
 
@@ -23,7 +23,7 @@ A creator buy is an ordinary curve buy at the same 1.25% fee, and it **does** mo
 
 Toggle **2x** at creation. The flag is immutable — flipping it after the curve filled would let a creator attach leverage only once it was free. 1x coins never pull senior.
 
-The creator's 0.30% is paid in the coin's **quote asset** — cbBTC on a cbBTC-quoted coin, WETH on a WETH one. A 2x creator may instead take HFyc mint-at-NAV; a 1x creator may not, because a coin that never pairs against the Earn Pool would be minting senior out of trade fees with no occupancy behind it. The choice is frozen at creation (`createLaunch` reverts "1x quote fees" otherwise).
+The creator's 0.30% is paid in the coin's **quote asset** — cbBTC on a cbBTC-quoted coin, WETH on a WETH one. A 2x creator may instead take LYC mint-at-NAV; a 1x creator may not, because a coin that never pairs against the Earn Pool would be minting senior out of trade fees with no occupancy behind it. The choice is frozen at creation (`createLaunch` reverts "1x quote fees" otherwise).
 
 ### 2. Graduation → AMM
 
@@ -44,9 +44,9 @@ Two collateral buckets after that:
 
 The mirror of that is `reserveCover = reserveEth / juniorEth`. The AMM quotes off `juniorEth` but can only *pay* from `reserveEth`, and on a rally the senior claim shrinks in ETH terms so part of the vault stops backing senior and starts belonging to the junior — while sitting where a seller cannot reach it. `rebalanceToReserve()` moves exactly that excess and nothing else: TVL, junior NAV and leverage are all unchanged.
 
-### 3. vHFyc — the senior claim is a supply, not a number
+### 3. vLYC — the senior claim is a supply, not a number
 
-`seniorUsd` is the supply of a per-pool virtual unit. One vHFyc is one dollar of the Earn Pool's claim in that pool, minted when senior attaches and burned when it leaves. It is deliberately not transferable.
+`seniorUsd` is the supply of a per-pool virtual unit. One vLYC is one dollar of the Earn Pool's claim in that pool, minted when senior attaches and burned when it leaves. It is deliberately not transferable.
 
 ```
 memeNAV = TVL − senior      CR = TVL / senior      L = TVL / memeNAV
@@ -70,7 +70,7 @@ There is no `minOut` anywhere in this path, which is the entire point: the momen
 
 ### 5. Multi-collateral
 
-One senior claim, many collaterals. HFyc is a dollar claim and vHFyc is denominated in dollars, so a claim against a BTC pool and one against an ETH pool are the same unit; the senior token does not care which asset backs it. The risk machinery does — each listed asset gets its own oracle, its own venue for cash conversions, its own collateral ratio, its own cap, and its own price for renting senior.
+One senior claim, many collaterals. LYC is a dollar claim and vLYC is denominated in dollars, so a claim against a BTC pool and one against an ETH pool are the same unit; the senior token does not care which asset backs it. The risk machinery does — each listed asset gets its own oracle, its own venue for cash conversions, its own collateral ratio, its own cap, and its own price for renting senior.
 
 ```solidity
 earnPool.addCollateral(token, oracle, router, capBps);
@@ -95,7 +95,7 @@ cbBTC is **8 decimals**, and that is load-bearing. The oracle prices one whole t
 
 ### 6. The Earn Pool
 
-Depositors mint HFyc against USDG (or collateral sold to USDG on arrival), issued at $1 NAV. Holding HFyc *is* being in the Earn Pool — there is nothing to stake, which is why supply never moves when yield arrives. NAV rises only when value arrives **without** new shares:
+Depositors mint LYC against USDG (or collateral sold to USDG on arrival), issued at $1 NAV. Holding LYC *is* being in the Earn Pool — there is nothing to stake, which is why supply never moves when yield arrives. NAV rises only when value arrives **without** new shares:
 
 - Occupancy rent 2x memes pay on attached senior (no cash in; junior NAV down).
 - The pairing 50 bps, billed on high-water senior.
@@ -161,7 +161,7 @@ cd contracts && forge build --sizes && python3 extract-abis.py && python3 audit-
 Durable home for the data that used to live in browser `localStorage` — NAV history, price points, the trade ledger, rebalances, X profiles, and per-asset `collateral_samples`.
 
 ```bash
-createdb hoodfrenzy          # once
+createdb levera          # once
 cd db && npm run smoke       # schema + store round trip
 ```
 
@@ -209,5 +209,5 @@ The console's **Collateral shock** panel drives the price through a `ShockableOr
 - The oracle heartbeat is 24h; reads fail closed after 25h.
 - Test USDG/WETH are mock mintable 18-decimal tokens. Live USDG is 6-decimal — production must not use the mocks.
 - `createLaunch` is permissionless; clones initialize in the same transaction, so there is no front-run window.
-- Multi-collateral is **built**. Each listed asset carries its own feed, venue, collateral ratio, cap and rent surcharge; `Launch` needed no changes because every senior and collateral mutation already routed through `onlyPool` calls. See `HFYC.md` §21 and `docs/protocol/multi-collateral.mdx`.
+- Multi-collateral is **built**. Each listed asset carries its own feed, venue, collateral ratio, cap and rent surcharge; `Launch` needed no changes because every senior and collateral mutation already routed through `onlyPool` calls. See `LEVERA.md` §21 and `docs/protocol/multi-collateral.mdx`.
 - Isolation contains a bad listing; it does not diversify beta. A broad selloff stresses every asset at once and the senior claim feels a share of it.

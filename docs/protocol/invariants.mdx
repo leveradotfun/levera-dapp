@@ -54,7 +54,7 @@ Asserted in `contracts/test/Invariants.t.sol` after every public function, and r
 1. $\mathrm{NAV} \times \mathrm{supply} = \mathcal{L}$ (1 wei rounding).
 2. $\mathcal{L} + \sum J_i = \sum \mathrm{TVL}_i + U_{\mathrm{idle}}$.
 3. $J_i = \max(\mathrm{TVL}_i - S_i, 0)$.
-4. No HFyc exists whose backing is unpaired ETH.
+4. No LYC exists whose backing is unpaired ETH.
 5. Fee mint: $\Delta\mathrm{supply} \times \mathrm{NAV} = \Delta U_{\mathrm{idle}}$ (within swap slippage); NAV does not drop.
 6. Holder 50 bps + pairing bps + occupancy: $\Delta\mathcal{L}$ with $\Delta\mathrm{supply} = 0$ (NAV up).
 7. A sell-route fill moves $L$ toward $2.0$ and does not cut junior NAV beyond the booked route spread.
@@ -64,7 +64,7 @@ Asserted in `contracts/test/Invariants.t.sol` after every public function, and r
 11. Occupancy never reduces $J_i$ below 0; occupancy is 0 at $L \ge 2.5$.
 12. Creator toggle cannot change after `createLaunch`.
 13. The Launch implementation cannot be `initialize`d twice; clones only. It is constructed with `initialized = true`.
-14. **vHFyc reconciles:** $S_i = \text{minted}_i - \text{burned}_i$, and $\text{highWater}_i \ge S_i$.
+14. **vLYC reconciles:** $S_i = \text{minted}_i - \text{burned}_i$, and $\text{highWater}_i \ge S_i$.
 15. **The pairing fee is billed once:** $\texttt{pairingBilled}_i \le \texttt{seniorHighWater}_i$. Senior that leaves and returns is never charged twice for the same dollars.
 16. **The quoted price stays reachable:** $\texttt{juniorEth}_i \le \texttt{reserveEth}_i + \max(\texttt{vaultEth}_i - S_i/P,\ 0)$ — that is, any gap is never larger than what `rebalanceToReserve` is allowed to move.
 17. **Idle collateral is real:** the Earn Pool's WETH balance covers $E_{\mathrm{idle}}$, and its USDG balance covers $U_{\mathrm{idle}}$.

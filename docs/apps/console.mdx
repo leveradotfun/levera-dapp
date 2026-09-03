@@ -9,7 +9,7 @@ icon: terminal
 ## Jobs
 
 - **Deploy / wipe.** Wipe = revert the Anvil snapshot taken at fork start. Not `anvil_reset`.
-- **Launch bots.** Mix 1x and 2x. 1x must not be tagged `[HFyc fees]` unless `leverageEnabled && creatorFeeInHfyc` (the tag used to follow the config flag alone).
+- **Launch bots.** Mix 1x and 2x. 1x must not be tagged `[LYC fees]` unless `leverageEnabled && creatorFeeInHfyc` (the tag used to follow the config flag alone).
 - **Trader bots.** Curve slippage 3%, AMM 15% + retry. Post-grad quotes use AMM $k$, not NAV mint/redeem.
 - **Loop / simulate.** Load ticks 80–150 ms. Fork bot funding is oversized on purpose.
 - **Keeper.** Harvest, accrue occupancy, correct reserve cover, sweep orphans. On a research fork it also acts as the counterparty on open [rebalance routes](/protocol/routes), looping fills until the pool is back inside the band or the per-fill cap binds — in production that is an arbitrageur, not the console.

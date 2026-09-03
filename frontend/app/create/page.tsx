@@ -189,7 +189,7 @@ export default function CreatePage() {
       <div className="mb-5">
         <h1 className="text-lg font-bold text-foreground">Launch a coin</h1>
         <p className="text-xs text-muted mt-0.5">
-          Bonding curve first. Check 2x to pair against HFyc at graduation, or leave it off for a
+          Bonding curve first. Check 2x to pair against LYC at graduation, or leave it off for a
           normal market.
         </p>
       </div>
@@ -307,7 +307,7 @@ export default function CreatePage() {
             </Field>
           </div>
 
-          {/* Optional first buy, the way pump.fun offers one at creation. Deliberately framed as
+          {/* Optional first buy, offered at creation. Deliberately framed as
               "first in line", not a discount: it's an ordinary buy on the open curve at the same
               price and the same 1.00% fee anyone else pays -- see createLaunch's own comment. */}
           <div className="space-y-1">
@@ -391,8 +391,8 @@ export default function CreatePage() {
                 <span className="block text-sm font-semibold text-foreground">2x leverage</span>
                 <span className="block text-[11px] leading-relaxed text-muted">
                   {leverageEnabled
-                    ? "Attaches whatever HFyc is idle at graduation (up to 2x), then tops up as cash arrives. If senior is scarce, quieter 2x coins get peeled into this one. You pay occupancy rent and a pairing fee only on the dollars actually attached."
-                    : "Normal launch. After the curve fills it trades as a 1x market and never pulls HFyc senior."}
+                    ? "Attaches whatever LYC is idle at graduation (up to 2x), then tops up as cash arrives. If senior is scarce, quieter 2x coins get peeled into this one. You pay occupancy rent and a pairing fee only on the dollars actually attached."
+                    : "Normal launch. After the curve fills it trades as a 1x market and never pulls LYC senior."}
                 </span>
               </span>
             </label>
@@ -403,16 +403,16 @@ export default function CreatePage() {
                 <div className="flex gap-1 rounded-lg border border-border bg-surface p-1">
                   {(
                     [
-                      { hfyc: false, label: quoteName },
-                      { hfyc: true, label: "HFyc" },
+                      { lyc: false, label: quoteName },
+                      { lyc: true, label: "LYC" },
                     ] as const
                   ).map((opt) => (
                     <button
                       key={opt.label}
                       type="button"
-                      onClick={() => setFeeInHfyc(opt.hfyc)}
+                      onClick={() => setFeeInHfyc(opt.lyc)}
                       className={`flex-1 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
-                        feeInHfyc === opt.hfyc ? "bg-accent text-accent-ink" : "text-muted hover:text-foreground"
+                        feeInHfyc === opt.lyc ? "bg-accent text-accent-ink" : "text-muted hover:text-foreground"
                       }`}
                     >
                       {opt.label}
@@ -421,14 +421,14 @@ export default function CreatePage() {
                 </div>
                 <p className="text-[11px] leading-relaxed text-muted">
                   {feeInHfyc
-                    ? "Your 0.50% is converted to HFyc at harvest, minted at NAV, and immediately withdrawable (in the pool's collateral or USDG) on the HFyc page. This cannot be changed after launch."
+                    ? "Your 0.50% is converted to LYC at harvest, minted at NAV, and immediately withdrawable (in the pool's collateral or USDG) on the LYC page. This cannot be changed after launch."
                     : `Your 0.50% stays as ${quoteName}. Claim it from your profile whenever you want. This cannot be changed after launch.`}
                 </p>
               </div>
             ) : (
               <p className="text-[11px] leading-relaxed text-muted">
                 1x: creator 0.50% in {quoteName}, the rest to protocol — a 1x coin never pairs, so
-                HFyc has nothing attached and earns nothing from it. Taking your OWN fee as HFyc
+                LYC has nothing attached and earns nothing from it. Taking your OWN fee as LYC
                 still requires 2x.
               </p>
             )}
@@ -440,10 +440,10 @@ export default function CreatePage() {
                 value={`${quote?.targetRaiseLabel ?? LAUNCH_DEFAULTS.targetRaiseEth} ${quoteName} raised`}
               />
               <Spec label="Supply" value="800M public / 200M LP seed" />
-              <Spec label="Leverage" value={leverageEnabled ? "2x (HFyc loop + our AMM)" : "None (spot AMM)"} />
+              <Spec label="Leverage" value={leverageEnabled ? "2x (LYC loop + our AMM)" : "None (spot AMM)"} />
               <Spec
                 label="Your fee"
-                value={leverageEnabled && feeInHfyc ? "0.50% in HFyc" : `0.50% in ${quoteName}`}
+                value={leverageEnabled && feeInHfyc ? "0.50% in LYC" : `0.50% in ${quoteName}`}
               />
             </div>
           </div>

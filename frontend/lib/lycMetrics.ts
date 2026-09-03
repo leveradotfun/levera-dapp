@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { DeployedAddresses } from "./chain";
-import { HFycGlobal, fetchHFycGlobal } from "./hfyc";
+import { LycGlobal, fetchLycGlobal } from "./lyc";
 import { allFactories, fetchLaunchAddresses, getLaunch, getProvider } from "./launchpad";
 import { apiGet, apiPost } from "./remote";
 
@@ -55,7 +55,7 @@ export type Durability = {
   nav: number;
 };
 
-function sampleFromGlobal(g: HFycGlobal): NavSample {
+function sampleFromGlobal(g: LycGlobal): NavSample {
   const t = Date.now();
   return {
     t: Math.floor(t / BUCKET_MS) * BUCKET_MS,
@@ -68,24 +68,24 @@ function sampleFromGlobal(g: HFycGlobal): NavSample {
   };
 }
 
-export async function recordHFycSample(factory: string, g: HFycGlobal) {
-  await apiPost("/api/hfyc-nav", { factory, sample: sampleFromGlobal(g) });
+export async function recordLycSample(factory: string, g: LycGlobal) {
+  await apiPost("/api/lyc-nav", { factory, sample: sampleFromGlobal(g) });
 }
 
-export async function loadHFycSamples(factory: string): Promise<NavSample[]> {
-  const r = await apiGet<{ samples: NavSample[] }>(`/api/hfyc-nav?factory=${encodeURIComponent(factory)}`);
+export async function loadLycSamples(factory: string): Promise<NavSample[]> {
+  const r = await apiGet<{ samples: NavSample[] }>(`/api/lyc-nav?factory=${encodeURIComponent(factory)}`);
   return r?.samples ?? [];
 }
 
 function migrateLegacyNav(factory: string) {
   if (typeof window === "undefined") return;
   try {
-    const key = `hfyc-nav:${factory.toLowerCase()}`;
+    const key = `lyc-nav:${factory.toLowerCase()}`;
     const raw = window.localStorage.getItem(key);
     if (!raw) return;
     const samples = JSON.parse(raw) as NavSample[];
     if (Array.isArray(samples) && samples.length > 0) {
-      void apiPost("/api/hfyc-nav", { factory, samples });
+      void apiPost("/api/lyc-nav", { factory, samples });
     }
     window.localStorage.removeItem(key);
   } catch {
@@ -146,7 +146,7 @@ export function computeTrailingApy(samples: NavSample[]): { h24: TrailingApy; d7
 const UPPER = 2.5;
 const LOWER = 1.5;
 
-export async function fetchDurability(addresses: DeployedAddresses, g: HFycGlobal): Promise<Durability> {
+export async function fetchDurability(addresses: DeployedAddresses, g: LycGlobal): Promise<Durability> {
   const addrs = (await Promise.all(allFactories(addresses).map((f) => fetchLaunchAddresses(f)))).flat();
   const provider = getProvider();
   let graduated = 0;
@@ -160,8 +160,8 @@ export async function fetchDurability(addresses: DeployedAddresses, g: HFycGloba
       const l = getLaunch(a, provider);
       try {
         // Renamed from *FeeEth to *FeeQuote when multi-collateral landed. holderFeeQuote is
-        // HFyc's own leverage-scaled trading-fee slice -- real again as of the 50/45/5 redesign,
-        // and part of what's "unharvested" from HFyc's own perspective too.
+        // LYC's own leverage-scaled trading-fee slice -- real again as of the 50/45/5 redesign,
+        // and part of what's "unharvested" from LYC's own perspective too.
         const [grad, isPaired, lev, holder, proto] = (await Promise.all([
           l.graduated(),
           l.paired(),
@@ -212,9 +212,9 @@ export function formatPct(x: number): string {
   return `${(x * 100).toFixed(2)}%`;
 }
 
-/// Records a NAV sample whenever HFyc is loaded. Survives reloads; resets on new factory.
-export function useHFycMetrics(addresses: DeployedAddresses | null) {
-  const [g, setG] = useState<HFycGlobal | null>(null);
+/// Records a NAV sample whenever LYC is loaded. Survives reloads; resets on new factory.
+export function useLycMetrics(addresses: DeployedAddresses | null) {
+  const [g, setG] = useState<LycGlobal | null>(null);
   const [dur, setDur] = useState<Durability | null>(null);
   const [samples, setSamples] = useState<NavSample[]>([]);
 
@@ -227,11 +227,11 @@ export function useHFycMetrics(addresses: DeployedAddresses | null) {
     async function tick() {
       if (stopped || !addresses) return;
       try {
-        const gg = await fetchHFycGlobal(addresses);
+        const gg = await fetchLycGlobal(addresses);
         const sample = sampleFromGlobal(gg);
-        await recordHFycSample(addresses.factory, gg);
+        await recordLycSample(addresses.factory, gg);
         const d = await fetchDurability(addresses, gg);
-        const fromDb = await loadHFycSamples(addresses.factory);
+        const fromDb = await loadLycSamples(addresses.factory);
         if (stopped) return;
         setG(gg);
         setDur(d);
@@ -251,7 +251,7 @@ export function useHFycMetrics(addresses: DeployedAddresses | null) {
       stopped = true;
       clearInterval(id);
     };
-  }, [addresses?.factory, addresses?.hfyc]);
+  }, [addresses?.factory, addresses?.lyc]);
 
   const apy = useMemo(() => computeTrailingApy(samples), [samples]);
 

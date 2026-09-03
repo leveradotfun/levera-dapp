@@ -20,8 +20,8 @@ export type { LaunchStats };
 export const WAD = 10n ** 18n;
 export const TOTAL_SUPPLY_WAD = 1_000_000_000n * WAD;
 // Mirrors Launch.sol's TOTAL_FEE_BPS, used to preview a trade's fee client-side before it is
-// signed. HFyc took no trading-volume slice as of the fee-split change that dropped this from
-// 125 to 100 (55:45 creator:protocol, no HFyc holder slice) -- this constant drifted stale for
+// signed. LYC took no trading-volume slice as of the fee-split change that dropped this from
+// 125 to 100 (55:45 creator:protocol, no LYC holder slice) -- this constant drifted stale for
 // the same reason the *FeeEth call sites did, and every buy/sell preview undercounted the actual
 // fill by 25 bps until fixed.
 export const TOTAL_FEE_BPS = 100n;
@@ -33,7 +33,7 @@ export function getFactory(address: string, runner: ethers.Signer | ethers.Provi
   return new ethers.Contract(address, LaunchpadFactoryAbi as ethers.InterfaceAbi, runner);
 }
 
-export function getHFyc(address: string, runner?: ethers.Signer | ethers.Provider) {
+export function getLyc(address: string, runner?: ethers.Signer | ethers.Provider) {
   return new ethers.Contract(address, EarnPoolAbi as ethers.InterfaceAbi, runner ?? getProvider());
 }
 
@@ -319,9 +319,9 @@ export type CreateLaunchParams = {
   name: string;
   symbol: string;
   buyInCollateral?: bigint;
-  /// Pair against HFyc at 2x on graduation. False = a normal 1x market that never pulls senior.
+  /// Pair against LYC at 2x on graduation. False = a normal 1x market that never pulls senior.
   leverageEnabled?: boolean;
-  /// Creator's 0.30% in HFyc (true) or claimable in the coin's QUOTE asset (false). A cbBTC-quoted
+  /// Creator's 0.30% in LYC (true) or claimable in the coin's QUOTE asset (false). A cbBTC-quoted
   /// coin pays its creator cbBTC; a WETH-quoted one pays WETH. Frozen at creation.
   creatorFeeInHfyc?: boolean;
   /// Which launchpad, and therefore which quote asset. Defaults to the WETH launchpad.
@@ -845,7 +845,7 @@ export async function fetchCreatorFees(
     // before the USD price applies (1e10 for cbBTC, 1 for WETH).
     launch.quoteScale() as Promise<bigint>,
   ]);
-  // With the HFyc toggle set, `harvest()` converts the pending ETH and mints liquid shares
+  // With the LYC toggle set, `harvest()` converts the pending ETH and mints liquid shares
   // instead, so nothing is ever claimable here and the ETH figure only reflects what has not
   // been harvested yet.
   const claimableCollateral = inHfyc ? 0n : pending;
@@ -868,7 +868,7 @@ export async function claimFees(launchAddress: string) {
   });
 }
 
-/// Permissionless. A launch that graduated while the HFyc queue was short lists at 1x until
+/// Permissionless. A launch that graduated while the LYC queue was short lists at 1x until
 /// this succeeds. The public app had no caller for it, so coins stayed unlevered even after
 /// idle cash arrived.
 export async function tryPairLaunch(launchAddress: string) {
@@ -926,9 +926,9 @@ export async function keeperProtect(launchAddress: string) {
   return keeperSend(launchAddress, "protect");
 }
 
-/// Settle booked meme-trade fees into HFyc: holder 50 bps as unminted NAV yield, protocol
+/// Settle booked meme-trade fees into LYC: holder 50 bps as unminted NAV yield, protocol
 /// 45 bps as a fee-mint. Without this the ETH sits in the launch, excluded from TVL, and
-/// HFyc holders never see the trade-fee APY the spec assigns them.
+/// LYC holders never see the trade-fee APY the spec assigns them.
 export async function keeperHarvest(launchAddress: string) {
   return withSignerLock(DEPLOYER.privateKey, async () => {
     const launch = getLaunch(launchAddress, getManagedSigner(DEPLOYER.privateKey));
@@ -952,10 +952,10 @@ export async function keeperRebalanceToReserve(launchAddress: string) {
 }
 
 /// One tx settles occupancy on up to 32 pools so the NAV index does not depend on N keeper pokes.
-export async function keeperAccruePools(hfycAddress: string, pools: string[]) {
+export async function keeperAccruePools(lycAddress: string, pools: string[]) {
   if (pools.length === 0) return null;
   return withSignerLock(DEPLOYER.privateKey, async () => {
-    const h = getHFyc(hfycAddress, getManagedSigner(DEPLOYER.privateKey));
+    const h = getLyc(lycAddress, getManagedSigner(DEPLOYER.privateKey));
     const tx = await h.accruePools(pools.slice(0, 32), { gasLimit: 8_000_000n });
     return tx.wait();
   });

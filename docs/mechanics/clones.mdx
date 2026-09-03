@@ -30,9 +30,9 @@ Current margin is tight (on the order of tens of bytes). String shortening and e
 
 ## Migration path
 
-1. Deploy new `Launch` implementation + new `LaunchpadFactory` + (if needed) new `HFyc`.
-2. Stop creating on the old factory (owner pause on HFyc, or stop routing the UI at it).
+1. Deploy new `Launch` implementation + new `LaunchpadFactory` + (if needed) new `LYC`.
+2. Stop creating on the old factory (owner pause on LYC, or stop routing the UI at it).
 3. Let old coins trade, graduate, and unwind. Do not try to `delegatecall`-upgrade clones.
-4. HFyc is **not** cloned. It can be replaced only by a new book: depositors redeem, then mint on the new HFyc. There is no in-place migrate of liability.
+4. LYC is **not** cloned. It can be replaced only by a new book: depositors redeem, then mint on the new LYC. There is no in-place migrate of liability.
 
 Treat each `Launch` bytecode that changes storage slots as `Launch vN`.

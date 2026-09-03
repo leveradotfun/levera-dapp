@@ -76,7 +76,7 @@ const utcDay = () => new Date().toISOString().slice(0, 10);
 /// the signer, so a claim is provably made by the address it claims FOR -- no claiming for
 /// someone else, and the day in the message stops a signature being replayed tomorrow.
 function claimMessage(address: string, asset: Asset, day: string): string {
-  return `HoodFrenzy faucet claim\n${asset} ${day}\n${address.toLowerCase()}`;
+  return `Levera faucet claim\n${asset} ${day}\n${address.toLowerCase()}`;
 }
 
 function json(data: unknown, status = 200) {

@@ -9,7 +9,7 @@ icon: rocket
 Console **Deploy** (`ui/`) broadcasts the fork script against `127.0.0.1:8545`:
 
 - `Launch` implementation
-- `HFyc`
+- `LYC`
 - `LaunchpadFactory` (implementation immutable)
 - `ChainlinkPriceOracle` or `MockPriceOracle` depending on the script
 - Mock USDG / Mock WETH (18-dec, mintable)
@@ -27,7 +27,7 @@ forge build && python3 extract-abis.py && python3 audit-app-calls.py
 
 - Factory `createLaunch` is permissionless; clones initialize in the same transaction.
 - `registerPool` is factory-only. Compromised owner used to be a one-tx drain via `registerPool`; that path is gone.
-- Two-step HFyc ownership (`pendingOwner`).
+- Two-step LYC ownership (`pendingOwner`).
 - Guardian $\ne$ owner in production.
 - `ISwapRouter` in Launch/EarnPool — never `MockSwapRouter` on a live path. Mock is Ownable and can skew; `SWAP_TOLERANCE` then bricks rather than steals, but an owner who can skew still halts the book.
 - Production owner: multisig + timelock.

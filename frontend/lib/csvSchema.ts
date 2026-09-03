@@ -31,12 +31,12 @@ export const BOOK_COLUMNS = [
   "oracle_shock_pct",
   "shock_path_id",
   // --- the senior claim -------------------------------------------------
-  "hfyc_nav",
-  "hfyc_supply",
-  "hfyc_deposit_minted",
-  "hfyc_fee_minted",
-  "hfyc_liability_usd",
-  "hfyc_idle_usdg",
+  "lyc_nav",
+  "lyc_supply",
+  "lyc_deposit_minted",
+  "lyc_fee_minted",
+  "lyc_liability_usd",
+  "lyc_idle_usdg",
   // --- what backs it ----------------------------------------------------
   // In USD: collateral quantities across assets cannot be summed. Per-asset detail, which is the
   // only form that means anything with more than one listing, is in collaterals.csv.
@@ -101,7 +101,7 @@ export const POOL_COLUMNS = [
   "junior_nav_usd",
   "leverage",
   "cr",
-  // --- vHFyc as a supply with a history ---------------------------------
+  // --- vLYC as a supply with a history ---------------------------------
   "senior_minted_usd",
   "senior_burned_usd",
   "senior_high_water_usd",

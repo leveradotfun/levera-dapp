@@ -1,6 +1,6 @@
 import { Pool } from "pg";
 
-const DEFAULT_URL = "postgresql://mac@127.0.0.1:5432/hoodfrenzy";
+const DEFAULT_URL = "postgresql://mac@127.0.0.1:5432/levera";
 
 let pool: Pool | null = null;
 

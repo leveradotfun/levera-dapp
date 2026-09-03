@@ -15,8 +15,8 @@ const STATUS_LABEL: Record<LeverageBand["status"], string> = {
   unpaired: "UNLEVERED",
 };
 
-/// One coin's own leverage against the 1.5–2.5x band. HFyc is shared across every coin; this
-/// number is not. Pairing takes idle HFyc cash equal to this pool's junior USD.
+/// One coin's own leverage against the 1.5–2.5x band. LYC is shared across every coin; this
+/// number is not. Pairing takes idle LYC cash equal to this pool's junior USD.
 export default function LeverageBandBar({ launchAddress }: { launchAddress: string }) {
   const { addresses } = useAppState();
   const wallet = useWallet(addresses);
@@ -55,7 +55,7 @@ export default function LeverageBandBar({ launchAddress }: { launchAddress: stri
           </div>
           <p className="text-[11px] leading-relaxed text-muted">
             This coin was launched without 2x. It trades as a normal market after the curve and
-            never pulls HFyc senior. Leverage is a creation-time choice and cannot be flipped later.
+            never pulls LYC senior. Leverage is a creation-time choice and cannot be flipped later.
           </p>
         </div>
       );
@@ -71,7 +71,7 @@ export default function LeverageBandBar({ launchAddress }: { launchAddress: stri
           <span className="text-xs font-semibold tracking-wide text-blue-400">{STATUS_LABEL.unpaired}</span>
         </div>
         <p className="text-[11px] leading-relaxed text-muted">
-          2x is on, but HFyc senior is not attached yet. Pairing takes whatever idle exists, up
+          2x is on, but LYC senior is not attached yet. Pairing takes whatever idle exists, up
           to a full 2x ({usd(band.juniorUsd)} junior vs {usd(band.idleUsdg)} idle).
         </p>
         {!wallet.isConnected ? (
@@ -94,7 +94,7 @@ export default function LeverageBandBar({ launchAddress }: { launchAddress: stri
             }}
             className="w-full rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-ink disabled:opacity-40"
           >
-            {pairing ? "Pairing…" : canPair ? "Attach available HFyc (partial 2x ok)" : "Need idle HFyc to pair"}
+            {pairing ? "Pairing…" : canPair ? "Attach available LYC (partial 2x ok)" : "Need idle LYC to pair"}
           </button>
         )}
       </div>
@@ -144,9 +144,9 @@ export default function LeverageBandBar({ launchAddress }: { launchAddress: stri
       <p className="mt-2 text-[11px] leading-relaxed text-muted">
         Senior attached {usd(band.seniorUsd)} of {usd(band.juniorUsd)} (2x). This meme has paid{" "}
         {usd(band.occupancyPaidUsd)} occupancy rent and {usd(band.pairingFeesPaidUsd)} pairing
-        fees to HFyc.
+        fees to LYC.
         {band.status === "in-band"
-          ? " At target. Quiet coins can be peeled into louder ones when HFyc is scarce."
+          ? " At target. Quiet coins can be peeled into louder ones when LYC is scarce."
           : band.status === "below"
             ? " Under 2x — idle cash, then quieter coins' senior, will bump it toward target."
             : band.tripped

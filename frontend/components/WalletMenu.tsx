@@ -184,7 +184,17 @@ export default function WalletMenu() {
                 {xAuth.profile ? (
                   <span className="text-sm font-semibold text-foreground">@{xAuth.profile.username}</span>
                 ) : (
-                  <span className="font-mono text-sm text-foreground">{short}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard?.writeText(address).catch(() => {});
+                      toastSuccess("Address copied.");
+                    }}
+                    className="font-mono text-sm text-foreground transition-colors hover:text-accent"
+                    title="Copy address"
+                  >
+                    {short}
+                  </button>
                 )}
                 <span
                   className={`h-1.5 w-1.5 rounded-full ${isCorrectChain ? "bg-green" : "bg-yellow"}`}
@@ -196,6 +206,21 @@ export default function WalletMenu() {
                 {!isCorrectChain ? " · wrong network" : ""}
               </div>
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                disconnect();
+                setOpen(false);
+              }}
+              title="Disconnect"
+              aria-label="Disconnect"
+              className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface hover:text-red"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
+                <path strokeLinecap="round" d="M12 3v8" />
+                <path strokeLinecap="round" d="M6.3 6.3a8 8 0 1 0 11.4 0" />
+              </svg>
+            </button>
           </div>
 
           {isCorrectChain && walletBlind ? (
@@ -248,24 +273,9 @@ export default function WalletMenu() {
           </div>
 
           <div className="p-2">
-            {/* X connect/disconnect lives on the profile page; the faucet page replaced the test
-                top-up, and the explorer link is one click deeper in Profile & holdings. */}
+            {/* Copying the address is done by clicking it in the header above, and disconnecting
+                by the power icon there, so this menu only needs the deeper link. */}
             <MenuItem onClick={() => go(`/profile/${address}`)} label="Profile & holdings" />
-            <MenuItem
-              onClick={() => {
-                navigator.clipboard?.writeText(address).catch(() => {});
-                toastSuccess("Address copied.");
-                setOpen(false);
-              }}
-              label="Copy address"
-            />
-            <MenuItem
-              onClick={() => {
-                disconnect();
-                setOpen(false);
-              }}
-              label="Disconnect"
-            />
           </div>
         </div>
       ) : null}

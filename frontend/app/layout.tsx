@@ -7,7 +7,7 @@ import SideRail from "@/components/SideRail";
 import GlobalModals from "@/components/GlobalModals";
 import ToastHost from "@/components/ToastHost";
 import ProtocolKeeper from "@/components/ProtocolKeeper";
-import HFycMetricsRecorder from "@/components/HFycMetricsRecorder";
+import LycMetricsRecorder from "@/components/LycMetricsRecorder";
 
 export const metadata: Metadata = {
   title: "Robinhood Launchpad",
@@ -32,7 +32,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <GlobalModals />
             <ToastHost />
             <ProtocolKeeper />
-            <HFycMetricsRecorder />
+            <LycMetricsRecorder />
           </AppStateProvider>
         </WalletProvider>
       </body>

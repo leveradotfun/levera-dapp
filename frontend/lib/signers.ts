@@ -129,7 +129,7 @@ export function resetAllManagedSigners() {
 // Serializes every multi-step send-and-wait operation against a given private key, one at a time.
 // NonceManager's own nonce ALLOCATION is race-free (it increments synchronously before the first
 // await), but the deployer key here is shared across several independent, concurrently-polling
-// callers -- the autopilot's wallet funding loop, the keeper, HFyc top-ups -- each of which
+// callers -- the autopilot's wallet funding loop, the keeper, LYC top-ups -- each of which
 // does several sequential sends (approve, then the actual
 // call) as one logical unit. Two of those units interleaving on the wire produced a real, confusing
 // bug: an ethers CALL_EXCEPTION whose reported transaction (empty calldata, a plain value transfer)

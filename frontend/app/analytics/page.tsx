@@ -48,7 +48,7 @@ export default function AnalyticsPage() {
   }
 
   const totalFees = data.protocolFeesUsd + data.creatorFeesUsd;
-  const totalHfycFees = data.hfycMintFeesUsd + data.hfycRedeemFeesUsd;
+  const totalLycFees = data.lycMintFeesUsd + data.lycRedeemFeesUsd;
 
   return (
     <div className="space-y-6">
@@ -82,11 +82,11 @@ export default function AnalyticsPage() {
                 accent
               />
               <Stat
-                label="Senior — HFyc"
+                label="Senior — LYC"
                 value={compactUsd(data.seniorUsd)}
                 sub={
-                  data.hfycGlobalCr > 0
-                    ? `${data.hfycGlobalCr.toFixed(2)}x covered · NAV $${data.hfycNav.toFixed(4)}`
+                  data.lycGlobalCr > 0
+                    ? `${data.lycGlobalCr.toFixed(2)}x covered · NAV $${data.lycNav.toFixed(4)}`
                     : "no senior outstanding yet"
                 }
               />
@@ -101,7 +101,7 @@ export default function AnalyticsPage() {
         <p className="text-[11px] leading-relaxed text-muted">
           Every coin&apos;s collateral (WETH, cbBTC) the protocol holds: each bonding-curve raise
           before graduation, then its paired pool afterwards. Nothing here is borrowed — leverage comes from pairing
-          against HFyc&apos;s senior capital, not from a lending market, so the split shown is
+          against LYC&apos;s senior capital, not from a lending market, so the split shown is
           senior against junior rather than gross against debt. The two sides sum to TVL plus idle
           cash by construction.
         </p>
@@ -110,7 +110,7 @@ export default function AnalyticsPage() {
       {/* The senior book */}
       <section className="space-y-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">
-          Senior capital — HFyc
+          Senior capital — LYC
         </h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {!loaded ? (
@@ -124,20 +124,20 @@ export default function AnalyticsPage() {
               <Stat
                 label="Funding APR"
                 value={`${(data.fundingApr * 100).toFixed(2)}%`}
-                sub="paid by memecoins to HFyc holders"
+                sub="paid by memecoins to LYC holders"
                 accent
               />
               <Stat
                 label="Utilisation"
                 value={`${(data.seniorUtilization * 100).toFixed(1)}%`}
-                sub={`${compactUsd(data.hfycIdleUsdc)} idle and ready to pair`}
+                sub={`${compactUsd(data.lycIdleUsdc)} idle and ready to pair`}
               />
               <Stat
-                label="NAV per HFYC"
-                value={`$${data.hfycNav.toFixed(4)}`}
+                label="NAV per LYC"
+                value={`$${data.lycNav.toFixed(4)}`}
                 sub={
-                  data.hfycGlobalCr > 0
-                    ? `${data.hfycGlobalCr.toFixed(3)}x global cover`
+                  data.lycGlobalCr > 0
+                    ? `${data.lycGlobalCr.toFixed(3)}x global cover`
                     : "issued at $1"
                 }
               />
@@ -224,7 +224,7 @@ export default function AnalyticsPage() {
             </>
           ) : (
           <>
-          <Stat label="Total trading fees" value={compactUsd(totalFees)} sub="1.00% of every trade — 50% creator, rest split protocol/HFyc" accent />
+          <Stat label="Total trading fees" value={compactUsd(totalFees)} sub="1.00% of every trade — 50% creator, rest split protocol/LYC" accent />
           <Stat
             label="Protocol fees"
             value={compactUsd(data.protocolFeesUsd)}
@@ -251,20 +251,20 @@ export default function AnalyticsPage() {
             </div>
             <p className="mt-2 text-[11px] text-muted">
               &ldquo;Total trading fees&rdquo; above is protocol + creator only — it does not
-              include the up-to-5% HFyc slice, which scales with how much senior is paired against
-              each coin and lands as HFyc yield instead, not here. See &ldquo;Pairing + harvested
-              fees&rdquo; on the HFyc page.
+              include the up-to-5% LYC slice, which scales with how much senior is paired against
+              each coin and lands as LYC yield instead, not here. See &ldquo;Pairing + harvested
+              fees&rdquo; on the LYC page.
             </p>
           </div>
         ) : null}
       </section>
 
-      {/* HFyc mint/redeem fees */}
+      {/* LYC mint/redeem fees */}
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">HFyc fees</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">LYC fees</h2>
         <p className="text-xs text-muted -mt-1">
-          Separate from trading fees above: charged to HFyc depositors and redeemers, not to
-          memecoin traders. Both mint straight to the protocol treasury as liquid HFyc — a
+          Separate from trading fees above: charged to LYC depositors and redeemers, not to
+          memecoin traders. Both mint straight to the protocol treasury as liquid LYC — a
           protocol fee, not a NAV lift shared with every holder.
         </p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -276,9 +276,9 @@ export default function AnalyticsPage() {
             </>
           ) : (
           <>
-          <Stat label="Total HFyc fees" value={compactUsd(totalHfycFees)} sub="Lifetime, both charged to the treasury" accent />
-          <Stat label="Mint fees" value={compactUsd(data.hfycMintFeesUsd)} sub="0.10% of every HFyc deposit" />
-          <Stat label="Redeem fees" value={compactUsd(data.hfycRedeemFeesUsd)} sub="0.25% of every covered exit" />
+          <Stat label="Total LYC fees" value={compactUsd(totalLycFees)} sub="Lifetime, both charged to the treasury" accent />
+          <Stat label="Mint fees" value={compactUsd(data.lycMintFeesUsd)} sub="0.10% of every LYC deposit" />
+          <Stat label="Redeem fees" value={compactUsd(data.lycRedeemFeesUsd)} sub="0.25% of every covered exit" />
           </>
           )}
         </div>

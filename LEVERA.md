@@ -1,18 +1,18 @@
-# HFyc — Hood Frenzy Yield Coin
+# LYC — Levera Yield Coin
 
 Canonical mechanism spec. Every formula below is an invariant or a decision. Nothing here is left as
 "the keeper will figure it out."
 
-**HFyc** is the token — the senior, dollar-denominated claim. **The Earn Pool** (`EarnPool.sol`) is
+**LYC** is the token — the senior, dollar-denominated claim. **The Earn Pool** (`EarnPool.sol`) is
 the contract: the book that holds every senior dollar and aggregates the yield from every 2x coin
-attached to it. Holding HFyc *is* being in the Earn Pool; there is nothing to stake, which is why
+attached to it. Holding LYC *is* being in the Earn Pool; there is nothing to stake, which is why
 supply never moves when yield arrives.
 
 ---
 
 ## 1. One-sentence product
 
-People deposit cash (or collateral, sold on arrival) and hold **HFyc** — a single USD-senior token
+People deposit cash (or collateral, sold on arrival) and hold **LYC** — a single USD-senior token
 that starts at $1 and rises only from real inflows. Memecoins are the junior claim on the same
 collateral: they take **all** of its price movement, pay the Earn Pool in fees and occupancy rent,
 and are delevered by a route somebody else fills when the collateral falls. No flash loan, no second
@@ -27,7 +27,7 @@ defence.
 |---|---|
 | Morpho looping of raise ETH | Liquidation at ~17% ETH, carry, mock≠Morpho, quoted depth that is not cash |
 | hyUSD **and** eHYUSD | One token. Price *is* the yield |
-| Naked-minting HFyc as “fees” | Dilutes depositors. Fee asset in, then mint at NAV |
+| Naked-minting LYC as “fees” | Dilutes depositors. Fee asset in, then mint at NAV |
 | Time-only funding as the yield engine | A 2-minute coin pays ~0 at any honest APR |
 | 3x target | Sell-into-dump has no time. Wipe at −33% ETH |
 | Instant $1 redeem when CR ≤ 100% | First-mover bank run |
@@ -40,14 +40,14 @@ defence.
 
 | Who | Holds | What they are |
 |---|---|---|
-| HFyc depositor | Queue receipt, then **HFyc** | Senior. Dollar claim. No ETH upside once paired. Paid in NAV (unminted fees, pairing bps, funding) |
+| LYC depositor | Queue receipt, then **LYC** | Senior. Dollar claim. No ETH upside once paired. Paid in NAV (unminted fees, pairing bps, funding) |
 | Meme buyer | The launch token | Junior. 100% of ETH delta. Pays fees + rent. Leverage is **rented** and can fall |
-| Protocol treasury | Fee-minted **HFyc** (always liquid) | Aligned with HFyc. Not paid ETH |
-| Creator | ETH **or** fee-minted HFyc | Toggle set once at launch, immutable |
+| Protocol treasury | Fee-minted **LYC** (always liquid) | Aligned with LYC. Not paid ETH |
+| Creator | ETH **or** fee-minted LYC | Toggle set once at launch, immutable |
 
-**HFyc** is the only yield token. It is not a stablecoin. $1 is the **issue price** and the **healthy-NAV target**, not a peg the protocol defends with someone else’s collateral.
+**LYC** is the only yield token. It is not a stablecoin. $1 is the **issue price** and the **healthy-NAV target**, not a peg the protocol defends with someone else’s collateral.
 
-Each launch is an isolated vault (clone). HFyc accounting is global. A bug in one launch cannot `transferFrom` another launch’s ETH. An ETH crash hits every ETH pool together; isolation does not diversify beta.
+Each launch is an isolated vault (clone). LYC accounting is global. A bug in one launch cannot `transferFrom` another launch’s ETH. An ETH crash hits every ETH pool together; isolation does not diversify beta.
 
 On Robinhood Chain the cash leg is **USDG**. Implementation uses USDG, not USDC.
 
@@ -64,11 +64,11 @@ L_i            = TVL_i / memeNAV_i          if memeNAV_i > 0
                  ∞                          if memeNAV_i = 0 and TVL_i > 0
 CR_i           = TVL_i / senior_i           if senior_i > 0
 
-HFyc_liability = Σ senior_i + idle_USDG     // idle is cash, never unpaired ETH
-HFyc_nav       = HFyc_liability / HFyc_supply     // $1 when supply is 0 (genesis)
-HFyc_price     = HFyc_nav
+LYC_liability = Σ senior_i + idle_USDG     // idle is cash, never unpaired ETH
+LYC_nav       = LYC_liability / LYC_supply     // $1 when supply is 0 (genesis)
+LYC_price     = LYC_nav
 
-global_CR      = (Σ TVL_i + idle_USDG) / HFyc_liability
+global_CR      = (Σ TVL_i + idle_USDG) / LYC_liability
 ```
 
 `P` is the collateral oracle (ETH/USD), fail-closed on stale or wide confidence (same 2% conf / 1h age band already in `Launch.sol`). Every USD figure in this spec is computed off that oracle, never off a pool spot.
@@ -76,18 +76,18 @@ global_CR      = (Σ TVL_i + idle_USDG) / HFyc_liability
 Identities that must hold after every successful tx:
 
 ```
-HFyc_liability + Σ memeNAV_i  =  Σ TVL_i + idle_USDG
-HFyc_nav × HFyc_supply        =  HFyc_liability
+LYC_liability + Σ memeNAV_i  =  Σ TVL_i + idle_USDG
+LYC_nav × LYC_supply        =  LYC_liability
 memeNAV_i                     =  max(TVL_i − senior_i, 0)
 ```
 
-If a launch’s junior is wiped (`memeNAV_i = 0`), that pool’s remaining assets still count toward `TVL_i` and therefore toward HFyc. They are the Earn Pool's problem now, and `protect()` sweeps them to cash. Do not leave orphaned collateral marked as a $1 claim.
+If a launch’s junior is wiped (`memeNAV_i = 0`), that pool’s remaining assets still count toward `TVL_i` and therefore toward LYC. They are the Earn Pool's problem now, and `protect()` sweeps them to cash. Do not leave orphaned collateral marked as a $1 claim.
 
 ---
 
-## 5. HFyc minting — assets in, then shares out
+## 5. LYC minting — assets in, then shares out
 
-HFyc minted 1:1 against unpaired ETH is already undercollateralized on the next ETH tick down. There is no junior yet. That path is forbidden.
+LYC minted 1:1 against unpaired ETH is already undercollateralized on the next ETH tick down. There is no junior yet. That path is forbidden.
 
 ### 5.1 Convert on arrival
 
@@ -98,7 +98,7 @@ mintWithUsdg(usd):   idle += usd ; liability += usd ; mint usd/nav
 mintWithEth(eth):    sell to USDG at oracle minOut, then as above
 ```
 
-HFyc minted 1:1 against **unpaired collateral** would be undercollateralised on the next tick down,
+LYC minted 1:1 against **unpaired collateral** would be undercollateralised on the next tick down,
 with no junior beneath it. Converting on the way in removes the exposure rather than making people sit through it: the claim is
 dollars, backed by dollars, from the moment it exists. The protocol buys collateral back only at the
 instant a pool is actually paired, atomically with the pairing, so there is never a window where a
@@ -110,32 +110,32 @@ When a launch attaches `S` USD of senior (§7):
 
 ```
 ethBought = swap S of idle → collateral at oracle minOut
-vaultEth += ethBought        senior += S       // vHFyc minted, §6.2
+vaultEth += ethBought        senior += S       // vLYC minted, §6.2
 idle     -= S
 ```
 
 Liability is unchanged throughout: `senior` and `idle` are both components of it. Later depositors
-mint at the **current** nav, never at $1 — if nav is $1.07, $107 mints 100 HFyc and existing holders
+mint at the **current** nav, never at $1 — if nav is $1.07, $107 mints 100 LYC and existing holders
 are not diluted.
 
-### 5.3 Fee mint (protocol / creator-in-HFyc)
+### 5.3 Fee mint (protocol / creator-in-LYC)
 
 Never `mint(wallet, usd)`. Always:
 
 ```
 feeEth in  → swap to USDG at oracle minOut
 idle_USDG += usdReceived
-HFyc_out   = usdReceived / HFyc_nav
-mint HFyc_out to recipient
+LYC_out   = usdReceived / LYC_nav
+mint LYC_out to recipient
 ```
 
 Assets in, then shares out. NAV unchanged. This is a deposit, not yield.
 
-All HFyc is the same liquid ERC-20. Deposit-minted and fee-minted shares transfer and redeem immediately. Exit pays idle USDG, or zaps to ETH. If idle is short, `redeemTo` peels senior from 2x pools in **quietest-first** recent-volume order (same allocation law as scarce-capital reallocation). Cover changes the price, never the permission.
+All LYC is the same liquid ERC-20. Deposit-minted and fee-minted shares transfer and redeem immediately. Exit pays idle USDG, or zaps to ETH. If idle is short, `redeemTo` peels senior from 2x pools in **quietest-first** recent-volume order (same allocation law as scarce-capital reallocation). Cover changes the price, never the permission.
 
 ### 5.4 Holder yield (no mint)
 
-Unminted fee ETH/USDG, pairing bps, and funding increase `HFyc_liability` **without** increasing supply. That is the only thing that lifts `HFyc_nav`.
+Unminted fee ETH/USDG, pairing bps, and funding increase `LYC_liability` **without** increasing supply. That is the only thing that lifts `LYC_nav`.
 
 ---
 
@@ -238,11 +238,11 @@ the collateral is in, nothing else.
 
 ### 7.1 Bonding curve
 
-Pump.fun-style constant-product on virtual reserves, quoted **in ETH**, custodying ETH. Same solvency reason as the current `Launch.sol`: a USD-quoted curve holding ETH is insolvent on an oracle move.
+A constant-product AMM on virtual reserves, quoted **in ETH**, custodying ETH. Same solvency reason as the current `Launch.sol`: a USD-quoted curve holding ETH is insolvent on an oracle move.
 
 Default: 1,000,000,000 fixed supply, target raise **6.9 ETH**. USD is snapshotted at the creation-time oracle for display only; the on-chain cap is the ETH amount, so the goalpost cannot drift with the dollar price.
 
-Curve fees: 1.25% on the ETH leg. **2x** (including pre-pair curve): 30 creator / 45 protocol / 50 HFyc holders (unminted USDG). **1x**: 30 creator / 95 protocol / 0 HFyc. 1x never rents senior, so its tape does not lift HFyc NAV.
+Curve fees: 1.25% on the ETH leg. **2x** (including pre-pair curve): 30 creator / 45 protocol / 50 LYC holders (unminted USDG). **1x**: 30 creator / 95 protocol / 0 LYC. 1x never rents senior, so its tape does not lift LYC NAV.
 
 ### 7.2 Graduation / pair
 
@@ -271,7 +271,7 @@ Worked: 6.9 ETH raise, ETH = $3,000.
 junior ETH   = 6.9
 senior ETH   = 6.9     (bought with idle cash)
 pool         = 13.8 ETH = $41,400
-HFyc minted  = 20,700 / nav          (20,700 HFyc if nav = $1)
+LYC minted  = 20,700 / nav          (20,700 LYC if nav = $1)
 meme NAV     = $20,700
 L            = 2.0
 ```
@@ -286,11 +286,11 @@ There is **no** hard per-launch cap. One made the first coin on an empty book un
 
 Post-pair, `memeNAV / reserveToken` is the fair price of the memecoin — junior NAV over the tokens **in the book**, not over the tokens held by buyers. Primary market is mint/redeem against the pool at that NAV, with the fee curve in §11. Secondary Uniswap listing is optional and must not be the NAV calculator.
 
-> This line previously read `memeNAV / circulating`, which is wrong and would be a visible break. At graduation the AMM is seeded with the ~200M tokens left in the contract, while ~800M sit with curve buyers, so the two denominators differ by 4×. Dividing by `circulating` prints a price **75% below** the last curve tick, so every coin would appear to crash the instant it graduated. Dividing by `reserveToken` is continuous with both the final curve price (`raise/200M`) and the AMM's own opening ratio, which is pump.fun's behaviour and what `Launch.sol` implements. Guarded by `test/GradPrice.t.sol`.
+> This line previously read `memeNAV / circulating`, which is wrong and would be a visible break. At graduation the AMM is seeded with the ~200M tokens left in the contract, while ~800M sit with curve buyers, so the two denominators differ by 4×. Dividing by `circulating` prints a price **75% below** the last curve tick, so every coin would appear to crash the instant it graduated. Dividing by `reserveToken` is continuous with both the final curve price (`raise/200M`) and the AMM's own opening ratio, and is what `Launch.sol` implements. Guarded by `test/GradPrice.t.sol`.
 
 Market cap is quoted on the **full 1e9 supply**, not on `circulating`. Supply is minted once and never burned, so price × 1e9 is exact in both phases; price × circulating collapses to roughly the money deposited and can never exceed the raise.
 
-Minting additional junior (ETH in, more memecoins out) at fair NAV, **without** pairing more HFyc, **lowers L**. That is allowed; the 1.5x edge then optionally re-levers. Do not silently turn a depositor’s ETH into someone else’s senior (the §7 bug in `THESIS.md`).
+Minting additional junior (ETH in, more memecoins out) at fair NAV, **without** pairing more LYC, **lowers L**. That is allowed; the 1.5x edge then optionally re-levers. Do not silently turn a depositor’s ETH into someone else’s senior (the §7 bug in `THESIS.md`).
 
 ---
 
@@ -302,7 +302,7 @@ ETH +10% on the §7.2 pool, funding off:
 TVL     = $41,400 × 1.10 = $45,540
 senior  = $20,700                 (unchanged)
 memeNAV = $24,840                 (+20% = 2 × 10%)
-HFyc    = $20,700, nav unchanged
+LYC    = $20,700, nav unchanged
 ```
 
 ETH −10%:
@@ -314,7 +314,7 @@ memeNAV = $16,560                 (−20%)
 L       = 2.25                    (still inside the band)
 ```
 
-HFyc does not get the moon. HFyc does not take the first 50% of a dump. That is the whole split.
+LYC does not get the moon. LYC does not take the first 50% of a dump. That is the whole split.
 
 ---
 
@@ -324,19 +324,19 @@ A 5% APR on a coin that lives two minutes is ~0.00002% of senior. Do not try to 
 
 ### 9.1 Trading fee — the yield (volume)
 
-Total **1.25%** on the quote (ETH) leg, pump.fun-shaped. Do not raise the total to feed HFyc.
+Total **1.25%** on the quote (ETH) leg. Do not raise the total to feed LYC.
 
 | Slice | 2x bps | 1x bps | Destination |
 |---|---|---|---|
-| Creator | 30 | 30 | ETH, or HFyc mint-at-NAV only if 2x and the creator opted in |
-| Protocol | 45 | 95 | HFyc mint-at-NAV to the treasury (backed; nav unchanged) |
-| HFyc holders | 50 | 0 | USDG in, **no mint**, nav up. **2x only.** |
+| Creator | 30 | 30 | ETH, or LYC mint-at-NAV only if 2x and the creator opted in |
+| Protocol | 45 | 95 | LYC mint-at-NAV to the treasury (backed; nav unchanged) |
+| LYC holders | 50 | 0 | USDG in, **no mint**, nav up. **2x only.** |
 
 Buyer pays fee-inclusive; seller receives fee-exclusive. Same as current `Launch.sol`.
 
 Post-pair and on the curve (§7.1): the 50 bps holder slice is converted to USDG and added to `idle_USDG` (or, if the launch is paired, it may be added to that pool as USDG and then swept to idle on harvest — implementation detail; economically it is unminted backing).
 
-Worked: $2,000,000 2-minute volume × 50 bps = **$10,000** into HFyc NAV. That is the paycheck. Funding over those 120 seconds is cents.
+Worked: $2,000,000 2-minute volume × 50 bps = **$10,000** into LYC NAV. That is the paycheck. Funding over those 120 seconds is cents.
 
 ### 9.2 Pairing fee — the 2-minute floor
 
@@ -346,9 +346,9 @@ Once, at pair:
 pairingFee = 50 bps × S          // 30–50 bps; lock 50 bps as the start
 ```
 
-Taken from the raise (junior) in ETH, swapped to USDG, **unminted** into HFyc. A coin that pairs, dumps, and never trades still pays for the attach and for the rebalancing that may follow. It is billed against the **high-water** senior, so senior that leaves on a route fill or a redemption peel and comes back is not charged a second time for the same dollars.
+Taken from the raise (junior) in ETH, swapped to USDG, **unminted** into LYC. A coin that pairs, dumps, and never trades still pays for the attach and for the rebalancing that may follow. It is billed against the **high-water** senior, so senior that leaves on a route fill or a redemption peel and comes back is not charged a second time for the same dollars.
 
-$20,700 paired × 50 bps = **$103.50** to HFyc. Always.
+$20,700 paired × 50 bps = **$103.50** to LYC. Always.
 
 ### 9.3 Per-second funding — occupancy rent (survivors)
 
@@ -394,7 +394,7 @@ are paid in kind (§11) and never depend on it succeeding.
 
 Permissionless. `EarnPool.sweepOrphaned(pools)` batches up to 32.
 
-## 11. HFyc holder exit
+## 11. LYC holder exit
 
 A holder is never locked in.
 
@@ -434,7 +434,7 @@ refused while the book is covered and the feed is live, because pro-rata deliber
 share of the junior cushion. Shares burned scale with what was actually delivered, so an unreachable
 remainder is not quietly handed to whoever stayed.
 
-Do not halt — a halt traps people. Do not convert HFyc into the memecoin. Do not let a holder pick
+Do not halt — a halt traps people. Do not convert LYC into the memecoin. Do not let a holder pick
 which launch to peel: the order is protocol-defined, quietest-first by recent volume.
 
 10 bps of each exit stays unminted. The exiting holder benefited from the rebalancing that kept the
@@ -442,21 +442,21 @@ book solvent, and the remaining holders inherit the cost.
 
 ## 12. Meme-side honesty
 
-HFyc is senior. 2x is **rented**.
+LYC is senior. 2x is **rented**.
 
 If a route is filled, the coin’s leverage falls toward 2.0 on a smaller collateral book, or toward 1x if senior leaves entirely. NAV of remaining junior is not robbed by a fair unwind; **future** ETH beta is smaller.
 
 Copy on the coin page, not in a footnote:
 
-> 2x ETH, variable. If ETH dumps, the vault sells to USDG to protect HFyc and this coin’s leverage falls. HFyc can exit. This ticker can go to zero at a 50% ETH gap if that gap is one print.
+> 2x ETH, variable. If ETH dumps, the vault sells to USDG to protect LYC and this coin’s leverage falls. LYC can exit. This ticker can go to zero at a 50% ETH gap if that gap is one print.
 
 Primary mint/redeem of the memecoin uses a CR-aware fee: cheap near L = 2, steep as L → 2.5 on junior exits (leaving raises L), steep as L → 1.5 on junior mints (arriving lowers L). Fees stay in the pool (cushion), they are not a buyback.
 
 ---
 
-## 13. Protocol fee as HFyc, creator toggle
+## 13. Protocol fee as LYC, creator toggle
 
-### 13.1 Protocol (always HFyc)
+### 13.1 Protocol (always LYC)
 
 The 45 bps protocol slice is **never ETH in the treasury**. Path: §5.3. Locked. After the lock, the treasury may redeem at nav or hold. Holding is the alignment. Redeeming is the same ETH they would have been paid in the first place — which is why the lock exists.
 
@@ -471,9 +471,9 @@ creatorFeeInHfyc: bool
 | | Creator receives | Risk |
 |---|---|---|
 | `false` | Claimable ETH, pull not push (current `Launch.sol` reason: a reverting recipient must not brick trading) | ETH beta on fees |
-| `true` | §5.3 mint, creator lock | HFyc yield, senior risk, no ETH upside on that income |
+| `true` | §5.3 mint, creator lock | LYC yield, senior risk, no ETH upside on that income |
 
-No per-trade flip. They can buy HFyc in the market if they picked ETH.
+No per-trade flip. They can buy LYC in the market if they picked ETH.
 
 Accrue-and-claim for ETH. Do not push ETH on every swap.
 
@@ -482,7 +482,7 @@ Accrue-and-claim for ETH. Do not push ETH on every swap.
 ## 14. Supply accounting (show this on the Earn Pool page)
 
 ```
-HFyc_supply = deposit_minted + fee_minted
+LYC_supply = deposit_minted + fee_minted
 ```
 
 NAV yield increases neither. If the UI shows "price up" from a fee mint, it is lying: a fee mint is
@@ -538,7 +538,7 @@ After every successful public function:
 1. `nav × supply = liability` (1 wei rounding).
 2. `liability + Σ memeNAV = Σ TVL + idle_USDG + idle_WETH × P`, whenever a price exists.
 3. `memeNAV_i = max(TVL_i − senior_i, 0)`.
-4. No HFyc exists whose backing is unpaired collateral.
+4. No LYC exists whose backing is unpaired collateral.
 5. Fee mint: `Δsupply × nav = Δidle` (within swap slippage); nav does not drop.
 6. Holder 50 bps + pairing + occupancy + route spread: `Δliability` with `Δsupply = 0` (nav up).
 7. A sell-route fill moves L toward 2.0 and does not cut junior NAV beyond the booked route spread.
@@ -548,7 +548,7 @@ After every successful public function:
 11. Occupancy never drives `memeNAV` below 0, and is 0 at L ≥ 2.5.
 12. The creator toggle cannot change after `createLaunch`.
 13. The Launch implementation cannot be `initialize`d twice; clones only.
-14. **vHFyc reconciles:** `senior = minted − burned`, and `highWater ≥ senior`.
+14. **vLYC reconciles:** `senior = minted − burned`, and `highWater ≥ senior`.
 15. **The pairing fee is billed once:** `pairingBilled ≤ seniorHighWater`.
 16. **The quote stays reachable:** `juniorEth ≤ reserveEth + max(vaultEth − senior/P, 0)`.
 17. **Idle assets are real:** the Earn Pool's USDG balance covers `idle_USDG`, its WETH balance
@@ -564,19 +564,19 @@ feed exists to say so — which is precisely when that path is not in use.
 
 **Slow dump.** The sell route opens at 2.2x, fillers ratchet the senior into USDG, nav holds, memes delever. This is the intended path — and it depends on somebody filling. The route pays a premium near the inner bound precisely so that somebody does.
 
-**Gap −50% one oracle print.** Junior zero. HFyc nav = leftover / supply, possibly below $1. Pro-rata exit. This is not a bug. 2x means a *larger* gap than 3x, not no gap.
+**Gap −50% one oracle print.** Junior zero. LYC nav = leftover / supply, possibly below $1. Pro-rata exit. This is not a bug. 2x means a *larger* gap than 3x, not no gap.
 
 **Thin USDG book.** Rebalancing is unaffected: a route has no `minOut`, so a thin book means it fills slowly, not that it fails. Fee swaps and the orphan sweep still revert rather than take a bad fill, and neither blocks anything — booked fees wait, and holder exits are paid in kind. Do not widen minOut to "make it work."
 
 **No idle cash.** No 2x pairs. Coins can still sell on the curve; they do not graduate into fake leverage.
 
-**2-minute coin, huge volume.** HFyc nav jumps from the 50 bps + pairing bps. Funding ≈ 0. Correct.
+**2-minute coin, huge volume.** LYC nav jumps from the 50 bps + pairing bps. Funding ≈ 0. Correct.
 
-**2-minute coin, zero volume, instant dump.** Pairing bps is the only yield. `protect()` may slip against junior. HFyc should still be whole if the move is inside −50% and txs land. If not, §17 gap.
+**2-minute coin, zero volume, instant dump.** Pairing bps is the only yield. `protect()` may slip against junior. LYC should still be whole if the move is inside −50% and txs land. If not, §17 gap.
 
-**Protocol sells fee-HFyc.** Equivalent to having been paid USDG. Depositors were not diluted at mint (assets in, then shares out). Fee-minted shares are liquid; alignment is that the treasury holds the senior of live 2x pools, not a time-lock.
+**Protocol sells fee-LYC.** Equivalent to having been paid USDG. Depositors were not diluted at mint (assets in, then shares out). Fee-minted shares are liquid; alignment is that the treasury holds the senior of live 2x pools, not a time-lock.
 
-**All launches are ETH.** Isolation does not save HFyc from one crash. USDG idle is the only diversifier until another collateral type exists.
+**All launches are ETH.** Isolation does not save LYC from one crash. USDG idle is the only diversifier until another collateral type exists.
 
 **Junior mint at NAV without new senior.** L falls. If it hits 1.5, optional relever. Do not steal the minter’s ETH into senior.
 
@@ -590,9 +590,9 @@ Keep: isolated clones, oracle conf/staleness, fee accrue-not-push, factory param
 
 New:
 
-1. **`HFyc`** — ERC-20 + `nav()`, mint against USDG/ETH, `redeem`/`redeemTo`, fee-mint (always liquid), idle USDG.
+1. **`LYC`** — ERC-20 + `nav()`, mint against USDG/ETH, `redeem`/`redeemTo`, fee-mint (always liquid), idle USDG.
 2. **`Launch` clone** — curve, pair, junior mint/redeem, `protect`, funding index, fee split.
-3. **`LaunchpadFactory`** — whitelist, `createLaunch(..., creatorFeeInHfyc)`, launch cap `f`, register pool with HFyc.
+3. **`LaunchpadFactory`** — whitelist, `createLaunch(..., creatorFeeInHfyc)`, launch cap `f`, register pool with LYC.
 4. No Morpho adapter. No 1 Hz keeper. `protect()` is permissionless; a bounty from the 10 bps redeem fee is enough.
 
 ---
@@ -604,7 +604,7 @@ New:
 L  = TVL / (TVL − senior)          CR = TVL / senior          targetL = 2
 senior_needed_to_pair = raiseUsd   // because targetL = 2
 
-// vHFyc — the per-pool virtual senior unit
+// vLYC — the per-pool virtual senior unit
 senior       = minted − burned
 highWater    = max over time of senior
 claimEth     = senior / P
@@ -662,7 +662,7 @@ pro-rata:  usdgOut = idle × s/supply;  ethOut = (idleWeth + Σ vaultEth) × s/s
 
 ## 20. The rule that makes the rest hold
 
-HFyc is a dollar-senior that **starts** at $1 and **rises** only when assets enter without a
+LYC is a dollar-senior that **starts** at $1 and **rises** only when assets enter without a
 matching mint: fees, pairing, occupancy, and the spread the protocol earns for de-risking. The
 memecoin is the residual on the collateral.
 
@@ -681,7 +681,7 @@ that pretends a 2-minute coin paid rent.
 
 ## 21. Multi-collateral and routing
 
-HFyc is a dollar claim and vHFyc is denominated in dollars, so a claim against a BTC pool and one
+LYC is a dollar claim and vLYC is denominated in dollars, so a claim against a BTC pool and one
 against an ETH pool are the same unit. The senior token does not care which asset backs it. The risk
 machinery does.
 

@@ -1,11 +1,11 @@
-# HoodFrenzy Postgres store
+# Levera Postgres store
 
 Durable home for protocol/research data that used to live in browser `localStorage`.
 
 ## Create the database
 
 ```bash
-createdb hoodfrenzy
+createdb levera
 ```
 
 That is the whole setup. The schema **applies itself**: `ensureSchema()` runs before the first query
@@ -25,7 +25,7 @@ Every statement in `schema.sql` is idempotent. Keep it that way.
 Default URL (no password, local socket/TCP):
 
 ```
-postgresql://mac@127.0.0.1:5432/hoodfrenzy
+postgresql://mac@127.0.0.1:5432/levera
 ```
 
 Override with `DATABASE_URL` in `frontend/.env.local` and `ui/.env.local`.

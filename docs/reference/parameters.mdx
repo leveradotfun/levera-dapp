@@ -1,6 +1,6 @@
 ---
 title: Locked parameters
-description: Live constants in Launch.sol and HFyc.sol, with spec deltas called out.
+description: Live constants in Launch.sol and LYC.sol, with spec deltas called out.
 icon: sliders
 ---
 
@@ -18,7 +18,7 @@ icon: sliders
 | Buy route outer | $L = 1.20$ | Max premium, clamped at $+200$ bps |
 | Route inner spreads | $\pm 50$ bps | The pool profits while it barely needs the flow |
 | `MAX_SELL_BPS` | $1500$ | 15% of vault per route fill, or of reserve per AMM sell. In-kind peels are uncapped — they touch no book. |
-| Collateral | ETH | wstETH later would be native yield $\to$ unminted HFyc |
+| Collateral | ETH | wstETH later would be native yield $\to$ unminted LYC |
 | Cash | USDG | Marked at USDG/USD |
 
 ## Fees
@@ -28,7 +28,7 @@ icon: sliders
 | Total trade fee | 125 bps | 125 bps |
 | Creator | 30 | 30 |
 | Protocol | 45 | 95 |
-| HFyc holders | 50 | 0 |
+| LYC holders | 50 | 0 |
 | Pairing | 50 bps of $\mathrm{take}$ | — |
 | Redeem | 10 bps unminted | 10 bps |
 | Swap minOut | 99% of oracle | 99% of oracle |
@@ -85,6 +85,6 @@ stream.
 |---|---|
 | Volume window | 1 day, exponential decay + same-wallet reverse wipe |
 | Occupancy cursor | 32 pools per redeem / `accruePools` |
-| Protocol / creator HFyc lock | **None** (retired) |
+| Protocol / creator LYC lock | **None** (retired) |
 | `CALM_REDEEM_CR` | $1.2$ (UI warning; not an on-chain gate) |
 | Clone | EIP-1167, factory `implementation` immutable |

@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 const X_CLIENT_ID = process.env.X_CLIENT_ID ?? "";
 const X_REDIRECT_URI = process.env.X_REDIRECT_URI ?? "";
 // Simple shared secret for signing the state param (prevents tampering)
-const STATE_SECRET = process.env.X_STATE_SECRET ?? "hoodfrenzy-x-oauth-state-secret";
+const STATE_SECRET = process.env.X_STATE_SECRET ?? "levera-x-oauth-state-secret";
 
 async function hmacSign(data: string): Promise<string> {
   const key = await crypto.subtle.importKey(

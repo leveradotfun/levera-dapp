@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useConnect, useAccount } from "wagmi";
 import type { Connector } from "wagmi";
 import { toastError } from "@/lib/toast";
+import { WALLET_ICONS, GenericWalletIcon } from "./walletIcons";
 
 interface WalletModalProps {
   open: boolean;
@@ -21,21 +22,66 @@ const WALLET_INFO: Record<string, { letter: string; color: string }> = {
   Backpack: { letter: "B", color: "#F7931A" },
 };
 
+/// Wallets to always offer even when not currently detected in the browser, matched against live
+/// connectors by name (case-insensitive) so an installed one is never shown twice. `installUrl` is
+/// where a click goes for one that ISN'T installed; WalletConnect has none because it isn't a
+/// browser extension -- clicking it always tries to connect directly.
+const POPULAR_WALLETS: { name: string; installUrl: string | null }[] = [
+  { name: "Rainbow", installUrl: "https://rainbow.me/download" },
+  { name: "Base", installUrl: "https://www.base.org/wallet" },
+  { name: "MetaMask", installUrl: "https://metamask.io/download" },
+  { name: "WalletConnect", installUrl: null },
+  { name: "Coinbase Wallet", installUrl: "https://www.coinbase.com/wallet/downloads" },
+];
+
+const LAST_WALLET_KEY = "levera:last-wallet-id";
+const TOS_ACCEPTED_KEY = "levera:tos-accepted";
+
+/// wagmi's generic "injected" connector always targets whatever `window.ethereum` currently
+/// points at, and only shows up NAMED (via EIP-6963) when the extension announces itself that
+/// way -- not every wallet does, or the announcement can lag the page's first render. When that
+/// happens the generic connector is still real and still works, it just has no name to show. Most
+/// wallets mark their own provider with an `isXxx` flag (the de facto standard MetaMask started
+/// and everyone else followed for exactly this kind of detection) -- read those directly rather
+/// than showing an unhelpful "Injected" tile a user has no way to identify.
+function detectInjectedWalletName(): string | null {
+  if (typeof window === "undefined") return null;
+  const eth = (window as unknown as { ethereum?: Record<string, unknown> }).ethereum;
+  if (!eth) return null;
+  const flags: [string, string][] = [
+    ["isPhantom", "Phantom"],
+    ["isBackpack", "Backpack"],
+    ["isRabby", "Rabby"],
+    ["isTrust", "Trust"],
+    ["isOkxWallet", "OKX Wallet"],
+    ["isCoinbaseWallet", "Coinbase Wallet"],
+    ["isMetaMask", "MetaMask"], // checked last: several wallets (Rabby, others) also set this
+  ];
+  // window.ethereum.providers is the older, pre-EIP-6963 convention for "more than one extension
+  // is here" -- if present, prefer whichever entry identifies itself, since `window.ethereum`
+  // itself may just be a proxy over all of them.
+  const list = Array.isArray(eth.providers) ? (eth.providers as Record<string, unknown>[]) : [eth];
+  for (const [flag, name] of flags) {
+    if (list.some((p) => p?.[flag])) return name;
+  }
+  return null;
+}
+
 const TOS_TEXT = `Terms of Service
 Last updated August 20, 2026
 
-These Terms of Service are an agreement between you and the operators of Robinhood.fun ("Robinhood.fun," "we," "us"). They apply to everything you do on this site: browsing, connecting a wallet, launching a token, trading, or claiming anything. If you do not agree with them, do not use the platform.
+These Terms of Service are an agreement between you and the operators of Levera ("Levera," "we," "us"). They apply to everything you do on this site: browsing, connecting a wallet, launching a token, trading, or claiming anything. If you do not agree with them, do not use the platform.
 
 We've written these in plain language on purpose. The headings are part of the terms, not decoration.
 
-1. What Robinhood.fun is
-Robinhood.fun is a website for launching and trading tokens on Ethereum-compatible chains. Most of what happens on Robinhood.fun happens on the blockchain, executed and signed by your own wallet. Some of it — launching, dev-buys, and the rewards mechanics described in sections 4 through 6 — involves wallets we operate. These terms tell you exactly which is which, because the difference matters.
+1. What Levera is
+Levera is a website for launching and trading tokens on Ethereum-compatible chains. Most of what happens on Levera happens on the blockchain, executed and signed by your own wallet. Some of it — launching, dev-buys, and the rewards mechanics described in sections 4 through 6 — involves wallets we operate. These terms tell you exactly which is which, because the difference matters.
 
 2. We are not your adviser
 Nothing on this site — listings, charts, prices, market caps, reward figures, or anything we or other users write — is investment, financial, legal, or tax advice, or a recommendation to buy, sell, or hold anything. We are not your broker, adviser, or fiduciary, and using the site does not make us one. Decisions are yours; make them with your own advisers.
 
 3. Trading is self-custodial
-When you buy or sell a token on Robinhood.fun, the transaction is built in your browser, signed by your wallet, and submitted to the network. We never hold your private keys. Confirmed transactions are irreversible — by anyone, including us. We cannot recover funds you send to a wrong address, sign into a phishing site, or lose to a compromised wallet or extension. Check every transaction before you approve it; the security of your keys and seed phrase is entirely on you.
+When you buy or sell a token on Levera, the transaction is built in your browser, signed by your wallet, and submitted to the network. We never hold your private keys. Confirmed transactions are irreversible — by anyone, including us. We cannot recover funds you send to a wrong address, sign into a phishing site, or lose to a compromised wallet or extension. Check every transaction before you approve it; the security of your keys and seed phrase is entirely on you.
 
 4. Where our wallets are involved
 Three flows pass through wallets we operate. We're telling you this precisely because most launch platforms don't:
@@ -57,7 +103,7 @@ Transfer tax — where the creator enables it, at the rate they choose (section 
 We can change fees for future launches at any time. We cannot and will not change the on-chain fee configuration of an existing pool.
 
 6. Transfer tax and holder rewards
-Some tokens launched on Robinhood.fun carry a transfer tax — a transfer fee set by the creator at launch, at a rate shown on the token's page. The tax is a property of the token itself and applies to transfers wherever they happen.
+Some tokens launched on Levera carry a transfer tax — a transfer fee set by the creator at launch, at a rate shown on the token's page. The tax is a property of the token itself and applies to transfers wherever they happen.
 
 Collected tax accrues in a rewards wallet we operate. We periodically convert and distribute accrued amounts to token holders. Read the following carefully, because it defines what this is and is not:
 
@@ -78,7 +124,7 @@ Any buyback or burn programs described on this site are historical only. They ar
 We do not issue, custody, redeem, or guarantee any quote asset, and we are not affiliated with any exchange, public company, broker-dealer, or tokenized-equity issuer. A token's name, ticker, or image is chosen by its creator and means nothing about what the token legally is. The quote assets themselves carry issuer, custody, redemption, and de-pegging risks that are entirely outside our control.
 
 9. Listings, and what we can do about them
-Anyone can launch a token here. We do not vet, audit, or endorse tokens, creators, or their claims, and a listing on Robinhood.fun is not evidence that a project is genuine or safe. Scams, impersonation, and rug pulls are known risks of permissionless launch platforms. Verify independently before you transact.
+Anyone can launch a token here. We do not vet, audit, or endorse tokens, creators, or their claims, and a listing on Levera is not evidence that a project is genuine or safe. Scams, impersonation, and rug pulls are known risks of permissionless launch platforms. Verify independently before you transact.
 
 That said, we do run automated checks at launch, we control which quote assets are eligible, and we reserve the right to hide or remove any listing from the site, restrict any token's access to platform features (including reward distributions), or refuse any launch — at our discretion, particularly for suspected fraud, impersonation, market manipulation, or legal risk. Hiding a listing does not remove anything from the blockchain; pools exist on chain regardless of whether we display them.
 
@@ -88,10 +134,10 @@ When you launch a token you supply its name, ticker, image, description, and lin
 To report content that infringes your rights or impersonates you, contact us through the platform's official channels. We may remove reported content and terminate access for repeat infringers.
 
 11. What you can't do
-Do not use Robinhood.fun to break the law. Do not manipulate markets — including wash trading, coordinated bundling to corner a token's supply, or launching tokens designed to deceive buyers. Do not attack, probe, or attempt to exploit the platform or its integrations. Do not use the platform to evade sanctions or launder money. We can restrict or terminate access for any of this, and these terms do not obligate us to warn you first.
+Do not use Levera to break the law. Do not manipulate markets — including wash trading, coordinated bundling to corner a token's supply, or launching tokens designed to deceive buyers. Do not attack, probe, or attempt to exploit the platform or its integrations. Do not use the platform to evade sanctions or launder money. We can restrict or terminate access for any of this, and these terms do not obligate us to warn you first.
 
 12. Eligibility
-You can use Robinhood.fun only if you are of legal age where you live and only where doing so is lawful. You may not use the platform if you are located in, incorporated in, or a resident of any jurisdiction subject to comprehensive sanctions, or if you appear on any sanctions or restricted-party list. We may restrict access from any jurisdiction at any time, with or without notice.
+You can use Levera only if you are of legal age where you live and only where doing so is lawful. You may not use the platform if you are located in, incorporated in, or a resident of any jurisdiction subject to comprehensive sanctions, or if you appear on any sanctions or restricted-party list. We may restrict access from any jurisdiction at any time, with or without notice.
 
 Whether a token, quote asset, or trade is lawful for you — including whether it is treated as a security or derivative under your local law — depends on where you are, and you are responsible for knowing. If tokenized-equity products are not available to people in your jurisdiction, do not trade against them here.
 
@@ -116,13 +162,54 @@ When we change these terms we will update the date at the top, and for material 
 17. The rest
 If part of these terms is found unenforceable, the rest stands. Our not enforcing a term is not a waiver of it. You cannot assign these terms; we can, to a successor of the platform. Sections that by their nature should survive (4 through 8, 14, and 15) survive termination. These terms are the whole agreement between us about the platform.`;
 
+type Phase = "tos" | "confirmed" | "wallets";
+
+function WalletIcon({ name, connectorIcon, size = 40 }: { name: string; connectorIcon?: string; size?: number }) {
+  // An EIP-6963-detected extension self-reports its own icon on the connector -- prefer that,
+  // since it's the wallet's own real logo with zero licensing ambiguity, over any static asset
+  // this app ships. Only fall back to our own glyph set (or a generic initial) when there is no
+  // live provider to ask, which is exactly the "Popular but not installed" case.
+  if (connectorIcon) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={connectorIcon} alt="" width={size} height={size} className="rounded-xl shrink-0" style={{ width: size, height: size }} />;
+  }
+  const Icon = WALLET_ICONS[name];
+  if (Icon) return <Icon width={size} height={size} className="rounded-xl shrink-0" />;
+  const info = WALLET_INFO[name];
+  return (
+    <GenericWalletIcon
+      letter={info?.letter ?? name[0]?.toUpperCase() ?? "?"}
+      color={info?.color ?? "#666"}
+      width={size}
+      height={size}
+      className="rounded-xl shrink-0"
+    />
+  );
+}
+
 export default function WalletModal({ open, onClose }: WalletModalProps) {
   const { connectors, connect, isPending } = useConnect();
   const { isConnected } = useAccount();
+  const [phase, setPhase] = useState<Phase>("tos");
   const [search, setSearch] = useState("");
   const [pendingConnector, setPendingConnector] = useState<string | null>(null);
   const [scrolledToBottom, setScrolledToBottom] = useState(false);
+  const [lastWalletId, setLastWalletId] = useState<string | null>(null);
+  const [injectedBrandName, setInjectedBrandName] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    // Re-check every time the modal opens: an extension can finish injecting after first paint.
+    setInjectedBrandName(detectInjectedWalletName());
+  }, [open]);
+
+  /// The name to show for a connector: its own EIP-6963 name when it has one, or a brand-flag
+  /// detection for the generic "injected" fallback, or "Injected" as the last resort.
+  const displayNameFor = useCallback(
+    (c: Connector) => (c.id === "injected" ? injectedBrandName ?? c.name : c.name),
+    [injectedBrandName]
+  );
 
   useEffect(() => {
     if (isConnected) {
@@ -132,10 +219,19 @@ export default function WalletModal({ open, onClose }: WalletModalProps) {
   }, [isConnected, onClose]);
 
   useEffect(() => {
-    if (open) {
-      setSearch("");
-      setScrolledToBottom(false);
-      if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    if (!open) return;
+    setSearch("");
+    setScrolledToBottom(false);
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    try {
+      setLastWalletId(localStorage.getItem(LAST_WALLET_KEY));
+      // The Terms only need accepting once per browser, not on every single connect attempt --
+      // re-showing a wall of legal text every time someone reconnects is friction with no benefit.
+      const accepted = localStorage.getItem(TOS_ACCEPTED_KEY) === "1";
+      setPhase(accepted ? "wallets" : "tos");
+    } catch {
+      // localStorage unavailable (private mode, etc.) -- fall back to asking every time.
+      setPhase("tos");
     }
   }, [open]);
 
@@ -146,25 +242,88 @@ export default function WalletModal({ open, onClose }: WalletModalProps) {
     setScrolledToBottom(atBottom);
   }, []);
 
-  if (!open) return null;
+  const handleConfirmTos = useCallback(() => {
+    try {
+      localStorage.setItem(TOS_ACCEPTED_KEY, "1");
+    } catch {
+      /* best effort */
+    }
+    setPhase("confirmed");
+  }, []);
 
-  const filtered = connectors.filter((c) => {
-    if (!search) return true;
-    return c.name.toLowerCase().includes(search.toLowerCase());
-  });
-
-  const handleConnect = (connector: Connector) => {
+  const handleConnect = useCallback((connector: Connector) => {
     setPendingConnector(connector.name);
     connect(
       { connector },
       {
+        onSuccess: () => {
+          try {
+            localStorage.setItem(LAST_WALLET_KEY, connector.id);
+          } catch {
+            /* best effort */
+          }
+        },
         onError: (err) => {
           setPendingConnector(null);
           toastError(err, "Couldn't connect.");
         },
       }
     );
-  };
+  }, [connect]);
+
+  // Split live connectors into "installed" (a real, currently-detected provider -- injected
+  // extensions via EIP-6963) vs the WalletConnect connector, which is never "installed" since it
+  // isn't a browser extension at all.
+  //
+  // wagmi's injected() always registers a generic "Injected" pseudo-connector for window.ethereum
+  // ALONGSIDE whatever EIP-6963-announced wallets it finds -- so a browser with MetaMask installed
+  // shows both "MetaMask" (real name, real icon) and a second "Injected" entry pointing at the
+  // exact same provider. Drop the generic one whenever a named alternative exists; keep it only as
+  // a last resort when it's the sole provider detected (an old wallet that predates EIP-6963).
+  const installedConnectors = useMemo(() => {
+    const real = connectors.filter((c) => c.type !== "walletConnect" && c.id !== "injected");
+    if (real.length > 0) return real;
+    return connectors.filter((c) => c.type !== "walletConnect");
+  }, [connectors]);
+  const walletConnectConnector = useMemo(
+    () => connectors.find((c) => c.type === "walletConnect"),
+    [connectors]
+  );
+
+  const installedNames = useMemo(
+    () => new Set(installedConnectors.map((c) => displayNameFor(c).toLowerCase())),
+    [installedConnectors, displayNameFor]
+  );
+
+  // Popular entries not already covered by a live (installed) connector, so nothing is shown twice.
+  const popularNotInstalled = useMemo(
+    () => POPULAR_WALLETS.filter((w) => w.name !== "WalletConnect" && !installedNames.has(w.name.toLowerCase())),
+    [installedNames]
+  );
+  const showWalletConnectInPopular = !installedNames.has("walletconnect");
+
+  const matchesSearch = useCallback(
+    (name: string) => !search || name.toLowerCase().includes(search.toLowerCase()),
+    [search]
+  );
+
+  const filteredInstalled = installedConnectors.filter((c) => matchesSearch(displayNameFor(c)));
+  const filteredPopular = popularNotInstalled.filter((w) => matchesSearch(w.name));
+  const showWc = showWalletConnectInPopular && matchesSearch("WalletConnect");
+
+  const sortByLastUsed = useCallback(
+    <T extends { id?: string; name: string }>(items: T[]): T[] => {
+      if (!lastWalletId) return items;
+      return [...items].sort((a, b) => {
+        const aLast = a.id === lastWalletId ? 1 : 0;
+        const bLast = b.id === lastWalletId ? 1 : 0;
+        return bLast - aLast;
+      });
+    },
+    [lastWalletId]
+  );
+
+  if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
@@ -173,7 +332,9 @@ export default function WalletModal({ open, onClose }: WalletModalProps) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-bold text-foreground">Connect a wallet</h3>
+          <h3 className="text-lg font-bold text-foreground">
+            {phase === "wallets" ? "Connect a wallet" : "Terms of Service"}
+          </h3>
           <button onClick={onClose} className="w-8 h-8 rounded-lg bg-surface hover:bg-hover flex items-center justify-center text-muted hover:text-foreground transition-colors">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -181,15 +342,53 @@ export default function WalletModal({ open, onClose }: WalletModalProps) {
           </button>
         </div>
 
-        {!scrolledToBottom ? (
-          <div
-            ref={scrollRef}
-            onScroll={handleScroll}
-            className="flex-1 min-h-0 overflow-y-auto rounded-xl bg-surface/50 border border-border p-4 mb-3 text-[11px] leading-relaxed text-secondary whitespace-pre-wrap max-h-72"
-          >
-            {TOS_TEXT}
+        {phase === "tos" && (
+          <>
+            <div
+              ref={scrollRef}
+              onScroll={handleScroll}
+              className="flex-1 min-h-0 overflow-y-auto rounded-xl bg-surface/50 border border-border p-4 mb-3 text-[11px] leading-relaxed text-secondary whitespace-pre-wrap max-h-72"
+            >
+              {TOS_TEXT}
+            </div>
+            {!scrolledToBottom && (
+              <p className="text-center text-[11px] text-muted mb-2">Scroll to the bottom to continue</p>
+            )}
+            <button
+              type="button"
+              onClick={handleConfirmTos}
+              disabled={!scrolledToBottom}
+              className="w-full rounded-xl py-3 text-sm font-semibold transition-colors bg-accent text-accent-ink disabled:opacity-40 disabled:cursor-not-allowed enabled:hover:opacity-90"
+            >
+              Confirm
+            </button>
+          </>
+        )}
+
+        {phase === "confirmed" && (
+          <div className="flex flex-col items-center justify-center py-10 gap-4 text-center">
+            <div className="w-14 h-14 rounded-full bg-accent/15 flex items-center justify-center">
+              <svg className="w-7 h-7 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-foreground">Terms confirmed</p>
+              <p className="text-xs text-muted mt-1 max-w-[240px]">
+                You can now choose a wallet to connect to Levera.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPhase("wallets")}
+              className="w-full rounded-xl bg-accent py-3 text-sm font-semibold text-accent-ink transition-opacity hover:opacity-90"
+            >
+              Proceed
+            </button>
           </div>
-        ) : (
+        )}
+
+        {phase === "wallets" && (
           <>
             <div className="relative mb-3">
               <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -206,57 +405,118 @@ export default function WalletModal({ open, onClose }: WalletModalProps) {
               />
             </div>
 
-            <div className="flex flex-col gap-1 max-h-72 overflow-y-auto">
-              {filtered.map((c) => {
-                const info = WALLET_INFO[c.name];
-                const letter = info?.letter ?? c.name[0];
-                const color = info?.color ?? "#666";
-                const isConnecting = isPending && pendingConnector === c.name;
+            <div className="flex flex-col gap-4 max-h-80 overflow-y-auto">
+              {filteredInstalled.length > 0 && (
+                <div>
+                  <div className="text-[11px] font-semibold text-accent uppercase tracking-wider mb-1.5 px-1">Installed</div>
+                  <div className="flex flex-col gap-1">
+                    {sortByLastUsed(filteredInstalled).map((c) => {
+                      const isConnecting = isPending && pendingConnector === c.name;
+                      const isLast = c.id === lastWalletId;
+                      const name = displayNameFor(c);
+                      return (
+                        <button
+                          key={c.uid}
+                          onClick={() => handleConnect(c)}
+                          disabled={isPending}
+                          className="flex items-center gap-3 p-3 rounded-xl hover:bg-surface transition-colors text-left group disabled:opacity-60"
+                        >
+                          <WalletIcon name={name} connectorIcon={c.icon} />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                              {name}
+                              {isLast && (
+                                <span className="px-1.5 py-0.5 rounded-md bg-accent/15 text-accent text-[9px] font-semibold uppercase tracking-wider">
+                                  Last used
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-muted">Detected in your browser</div>
+                          </div>
+                          {isConnecting ? (
+                            <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin shrink-0" />
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-md bg-accent/15 text-accent text-[10px] font-semibold uppercase tracking-wider shrink-0">
+                              Connect
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
-                return (
-                  <button
-                    key={c.uid}
-                    onClick={() => handleConnect(c)}
-                    disabled={isPending}
-                    className="flex items-center gap-3 p-3 rounded-xl hover:bg-surface transition-colors text-left group"
-                  >
-                    <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold shrink-0"
-                      style={{ backgroundColor: color, color: "#fff" }}
-                    >
-                      {letter}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-foreground">{c.name}</div>
-                      <div className="text-xs text-muted">Browser wallet</div>
-                    </div>
-                    {isConnecting ? (
-                      <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-md bg-accent/15 text-accent text-[10px] font-semibold uppercase tracking-wider">
-                        Connect
-                      </span>
+              {(filteredPopular.length > 0 || showWc) && (
+                <div>
+                  <div className="text-[11px] font-semibold text-muted uppercase tracking-wider mb-1.5 px-1">Popular</div>
+                  <div className="flex flex-col gap-1">
+                    {showWc && (
+                      <button
+                        onClick={() => {
+                          if (walletConnectConnector) handleConnect(walletConnectConnector);
+                        }}
+                        disabled={isPending || !walletConnectConnector}
+                        title={walletConnectConnector ? undefined : "Set NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID to enable"}
+                        className="flex items-center gap-3 p-3 rounded-xl hover:bg-surface transition-colors text-left group disabled:opacity-40"
+                      >
+                        <WalletIcon name="WalletConnect" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-foreground">WalletConnect</div>
+                          <div className="text-xs text-muted">
+                            {walletConnectConnector ? "Scan with any mobile wallet" : "Not configured"}
+                          </div>
+                        </div>
+                        {isPending && pendingConnector === "WalletConnect" ? (
+                          <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin shrink-0" />
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-md bg-surface text-muted text-[10px] font-semibold uppercase tracking-wider shrink-0 group-hover:bg-accent/15 group-hover:text-accent transition-colors">
+                            {walletConnectConnector ? "Connect" : "Setup"}
+                          </span>
+                        )}
+                      </button>
                     )}
-                  </button>
-                );
-              })}
 
-              {filtered.length === 0 && (
+                    {filteredPopular.map((w) => (
+                      <a
+                        key={w.name}
+                        href={w.installUrl ?? "#"}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        className="flex items-center gap-3 p-3 rounded-xl hover:bg-surface transition-colors text-left group"
+                      >
+                        <WalletIcon name={w.name} />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-foreground">{w.name}</div>
+                          <div className="text-xs text-muted">Not installed</div>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-md bg-surface text-muted text-[10px] font-semibold uppercase tracking-wider shrink-0 group-hover:bg-accent/15 group-hover:text-accent transition-colors">
+                          Install
+                        </span>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {filteredInstalled.length === 0 && filteredPopular.length === 0 && !showWc && (
                 <div className="text-center py-6 text-muted text-sm">No wallets found</div>
               )}
             </div>
           </>
         )}
 
-        {!scrolledToBottom && (
-          <p className="text-center text-[11px] text-muted mt-2">
-            Scroll to the bottom to continue
-          </p>
-        )}
-
         <div className="mt-3 pt-3 border-t border-border flex items-center justify-between text-xs text-muted">
           <span>What&apos;s a wallet?</span>
-          <span>More Wallets</span>
+          {phase === "wallets" && (
+            <button
+              type="button"
+              onClick={() => setPhase("tos")}
+              className="hover:text-foreground transition-colors"
+            >
+              Terms of Service
+            </button>
+          )}
         </div>
       </div>
     </div>
