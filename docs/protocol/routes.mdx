@@ -1,0 +1,123 @@
+---
+title: Rebalance routes
+description: The protocol posts a price and lets arbitrageurs fill it. It never trades for itself.
+icon: route
+---
+
+When a pool drifts away from $L^\star = 2$, something has to move collateral. The protocol does
+**not** do that by calling a venue. It posts a **route** at an oracle-derived price and lets whoever
+wants the trade fill it.
+
+<Note>
+The moment de-risking is most needed is the moment the venue is worst. A rebalance that calls a DEX
+with a `minOut` reverts exactly then. A route cannot: a thin book means it fills slowly, not that
+the rebalance fails.
+</Note>
+
+## Why a route and not a swap
+
+| | Swap the protocol executes | Route the protocol posts |
+|---|---|---|
+| Execution risk | Slippage, sandwiching, an unpredictable fill | None. The price is fixed by schedule |
+| Thin book | Reverts on `minOut` | Fills slowly, or waits |
+| MEV | The protocol is a taker, so it can be sandwiched | The protocol is not a taker |
+| Pricing input | Oracle **and** venue depth | Oracle only |
+| Cost of de-risking | Vanishes into a fill, unattributable | Booked as `routePnlUsd`, signed, per pool |
+| Near the target | Pays the spread | **Earns** the spread |
+
+The last row is the one people miss. Near the inner bound the pool barely needs the flow, so it
+prices *in its own favour* and is paid to de-risk. Only under real stress does it subsidise.
+
+## The price
+
+$$
+\text{routePrice} = P \cdot f(L)
+$$
+
+$f$ is a three-point [piecewise-linear curve](/reference/formula-sheet#piecewise-linear-schedules),
+clamped flat outside the outermost point. It depends only on $L$ and the control points, never on
+market data — which is precisely why a filler will show up: the fill price is knowable before the
+transaction is sent.
+
+### Sell route — the pool gives collateral, takes cash
+
+Opens **before** the mandatory edge. A single cliff at $2.5$ leaves ordinary drift unopposed, and
+drift is what actually moves a book away from target in a flat market.
+
+| $L$ | $f$ | What it means |
+|---|---|---|
+| $< 2.20$ | — | Route shut |
+| $2.20$ | $1.0050$ | Sells ETH **above** spot. The pool profits |
+| $2.50$ | $1.0000$ | Exactly oracle spot |
+| $\ge 3.00$ | $0.9800$ | Discounts ETH. The pool pays for urgency |
+
+### Buy route — the pool gives cash, takes collateral
+
+The mirror image, read as leverage falls. Deliberately optional: protecting the senior claim is the
+product, restoring 2x after a rally is a convenience.
+
+| $L$ | $f$ | What it means |
+|---|---|---|
+| $> 1.80$ | — | Route shut |
+| $1.80$ | $0.9950$ | Buys ETH **below** spot. The pool profits |
+| $1.50$ | $1.0000$ | Exactly oracle spot |
+| $\le 1.20$ | $1.0200$ | Pays up |
+
+## How much is on offer
+
+Selling $d$ ETH at $P f$ retires $d P f$ of senior, so the junior moves by $d P (f - 1)$ and the
+target solves in closed form:
+
+$$
+\mathrm{TVL} - dP = L^\star\left(J + dP(f-1)\right)
+\quad\Longrightarrow\quad
+d = \frac{\mathrm{TVL} - L^\star J}{P\left(L^\star f - (L^\star - 1)\right)}
+$$
+
+At $f = 1$ this reduces to $d = (\mathrm{TVL} - 2J)/P$. The denominator cannot go non-positive:
+$f$ is clamped to $[0.98,\ 1.005]$, so $2f - 1$ stays in $[0.96,\ 1.01]$.
+
+A fill is additionally capped at **15% of `vaultEth`** per transaction, and the buy route can never
+offer more than the Earn Pool's idle cash.
+
+## Reading and filling
+
+```solidity
+(uint256 ethAvailable, uint256 priceWad) = launch.sellRouteQuote();
+usdg.approve(address(launch), usdgIn);
+launch.fillSellRoute(usdgIn, minEthOut);   // pay USDG, receive WETH
+
+(uint256 ethWanted, uint256 buyPrice) = launch.buyRouteQuote();
+weth.approve(address(launch), ethIn);
+launch.fillBuyRoute(ethIn, minUsdgOut);    // pay WETH, receive USDG
+```
+
+Both are permissionless. The people who benefit from a sell fill are Earn Pool holders, and they
+should never have to wait on a keeper for their claim to stop being eroded.
+
+## Where the spread lands
+
+Every fill books its profit or subsidy to `routePnlUsd` on that pool, and it lands on the
+**junior** — the party renting the leverage. De-risking is paid for by the position being
+de-risked, never socialised onto the senior claim.
+
+<Note>
+Hylo settles the same P&L against its Earn Pool, because hyUSD is a hard \$1 peg and cannot absorb
+anything. HFyc's NAV floats, so it *could* — but it shouldn't. The senior claim stays clean in both
+directions, which is the entire product.
+</Note>
+
+## What happens if nobody fills
+
+The book stays levered. This is inherent to any market-incentivised rebalance, Hylo's included, and
+it is why the route opens early and pays a premium there rather than waiting for a cliff. The
+backstops behind it are the [leverage surcharge](/protocol/fees) on destabilising trades and
+[pool-to-pool netting](/protocol/netting), which needs no outside counterparty at all.
+
+## The one remaining swap
+
+`protect()` still calls the router, and is confined to pools whose junior is already gone
+($J = 0$). A route needs somebody to fill it and a dead coin has nobody watching, so the orphan
+sweep accepts a swap that may revert. Nothing is blocked when it does: the residual stays in ETH and
+the call can be retried, and [holder redemptions](/protocol/redeem) are paid in kind and never
+depend on it succeeding.

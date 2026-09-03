@@ -1,0 +1,52 @@
+---
+title: Harvest
+description: Fees are booked in ETH and settled in batches. Holder slice lifts NAV; protocol and creator-in-HFyc mint at NAV.
+icon: wheat
+---
+
+Swapping on every trade would put a DEX round-trip inside the hot path and let a thin USDG book revert ordinary buys. Fees are **booked in ETH** (`creatorFeeEth`, `protocolFeeEth`, `holderFeeEth`) and settled by permissionless `harvest()`.
+
+## Accounting identity
+
+Three ways value arrives at HFyc, as three functions, because collapsing them is how a book silently stops balancing:
+
+| Function | USDG moves? | Shares minted? | NAV | Used for |
+|---|---|---|---|---|
+| `depositYield` | Yes | No | Up | Pairing 50 bps, **holder** 50 bps |
+| `feeMint` | Yes (already pulled) | Yes, $\mathrm{usd}/\mathrm{NAV}$ | Unchanged | Protocol slice, creator-in-HFyc |
+| `accrueFunding` | No | No | Up (junior down) | Occupancy |
+
+Raising liability for a fee whose USDG never arrived inflates the claim against unchanged assets. Minting shares for occupancy would give away the yield.
+
+## `harvest()` steps
+
+1. `_live()` — paused book cannot harvest.
+2. Take `holderFeeEth + protocolFeeEth + (creatorFeeEth if creatorFeeInHfyc)`.
+3. Zero those buckets (creator ETH-fee bucket is left for `claimCreatorFees`).
+4. Wrap, swap to USDG at 99% of oracle.
+5. Split proceeds **in the same proportion the ETH went in**, so swap slippage is shared.
+6. Rounding dust goes to **holders**. Sweeping it into the creator's slice would fee-mint HFyc to a creator who chose ETH.
+7. `depositYield(holderUsd)`; `feeMint(feeRecipient, protocolUsd, true)`; `feeMint(creator, creatorUsd, false)` if opted in.
+
+On **1x**, `holderFeeEth` is always zero. Harvest is protocol 95 bps `feeMint` only. NAV does not move.
+
+## Keepers
+
+The public app and the console tick every launch with `harvestableEth > 0`. If keepers stop, unharvested ETH sits in the launch contract, not in HFyc NAV. The `/hfyc` durability panel shows `unharvestedEth`. Anyone can call `harvest()`.
+
+## Supply on the HFyc page
+
+$$
+\mathrm{supply} = \underbrace{\mathrm{deposit\_minted}}_{\texttt{totalDepositMinted}} + \underbrace{\mathrm{fee\_minted}}_{\texttt{totalFeeMinted}}
+$$
+
+NAV yield does **not** increase supply. If the UI shows "price up" from fee mints, it is lying. Show:
+
+- NAV
+- deposit-minted vs fee-minted
+- idle USDG vs ETH still in pools
+- $\mathrm{CR}_{\mathrm{global}}$
+- ETH drop to impairment, ignoring any rebalancing and **with** the current USDG mix
+- volume (24h) $\times 50$ bps / liability $\to$ implied **trade-fee** APY (only after `harvest()`)
+- occupancy rent settled vs pending (pending is not NAV)
+- pairing-fee cash yield

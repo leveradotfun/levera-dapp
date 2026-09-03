@@ -1,0 +1,20 @@
+{
+  "name": "@hoodfrenzy/db",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "index.ts",
+  "dependencies": {
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.5",
+    "tsx": "^4.19.2"
+  },
+  "scripts": {
+    "migrate": "tsx -e \"import('./migrate.ts').then(m=>m.ensureSchema()).then(()=>console.log('schema ok'))\"",
+    "wipe": "tsx -e \"import('./migrate.ts').then(m=>m.wipeDatabase()).then(()=>console.log('database wiped \u2014 clean slate'))\"",
+    "counts": "tsx -e \"import('./migrate.ts').then(m=>m.tableCounts()).then(c=>console.log(c))\"",
+    "smoke": "tsx smoke.ts"
+  }
+}

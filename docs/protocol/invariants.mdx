@@ -1,0 +1,77 @@
+---
+title: Invariants
+description: Identities that must hold after every successful public call.
+icon: sigma
+---
+
+Every USD figure is computed off the collateral oracle $P$ (ETH/USD) and the cash oracle (USDG/USD), never off a pool spot. Fail-closed on stale or wide confidence. See [Oracles](/chain/oracles).
+
+## Per-pool
+
+$$
+\begin{aligned}
+\mathrm{TVL}_i &= E_i \cdot P + U_i \\
+J_i &= \max(\mathrm{TVL}_i - S_i,\ 0) \\
+L_i &=
+\begin{cases}
+\mathrm{TVL}_i / J_i & J_i > 0 \\
+\infty & J_i = 0 \ \mathrm{and}\ \mathrm{TVL}_i > 0
+\end{cases} \\
+\mathrm{CR}_i &= \mathrm{TVL}_i / S_i \qquad (S_i > 0)
+\end{aligned}
+$$
+
+$E_i$ is `poolEth` $= \texttt{reserveEth} + \texttt{vaultEth}$. Fee ETH awaiting harvest is **not** in $E_i$: that belongs to creator / protocol / holders, not to the book. $E_{\mathrm{idle}}$ is collateral peeled in kind and not yet handed to a redeemer — an asset like any other, marked the same way.
+
+## Global
+
+$$
+\begin{aligned}
+\mathcal{L} &= \sum_i S_i + U_{\mathrm{idle}} + E_{\mathrm{idle}} \cdot P \\
+\mathrm{NAV} &= \mathcal{L} / \mathrm{supply} \qquad (\mathrm{NAV} := 1 \ \mathrm{if}\ \mathrm{supply}=0) \\
+\mathrm{CR}_{\mathrm{global}} &= \frac{\sum_i \mathrm{TVL}_i + U_{\mathrm{idle}} + E_{\mathrm{idle}} \cdot P}{\mathcal{L}}
+\end{aligned}
+$$
+
+`EarnPool.totalPooledEth` is a running sum maintained by the pools so `globalCr()` is $O(1)$. Iterating an unbounded pool array inside `redeem()` would be a permissionless DoS on the exit path.
+
+## Identities after every successful tx
+
+$$
+\begin{aligned}
+\mathcal{L} + \sum_i J_i &= \sum_i \mathrm{TVL}_i + U_{\mathrm{idle}} + E_{\mathrm{idle}} \cdot P \\
+\mathrm{NAV} \cdot \mathrm{supply} &= \mathcal{L} \qquad \text{(1 wei rounding)} \\
+J_i &= \max(\mathrm{TVL}_i - S_i,\ 0)
+\end{aligned}
+$$
+
+If a launch's junior is wiped ($J_i = 0$), that pool's remaining assets still count toward $\mathrm{TVL}_i$ and therefore toward the Earn Pool. They are the Earn Pool's problem now. `protect()` sweeps them to cash. Do not leave orphan ETH marked as a $\$1$ claim.
+
+## The test list
+
+Asserted in `contracts/test/Invariants.t.sol` after every public function, and restated in `EarnPool.sol` / `Launch.sol` headers:
+
+1. $\mathrm{NAV} \times \mathrm{supply} = \mathcal{L}$ (1 wei rounding).
+2. $\mathcal{L} + \sum J_i = \sum \mathrm{TVL}_i + U_{\mathrm{idle}}$.
+3. $J_i = \max(\mathrm{TVL}_i - S_i, 0)$.
+4. No HFyc exists whose backing is unpaired ETH.
+5. Fee mint: $\Delta\mathrm{supply} \times \mathrm{NAV} = \Delta U_{\mathrm{idle}}$ (within swap slippage); NAV does not drop.
+6. Holder 50 bps + pairing bps + occupancy: $\Delta\mathcal{L}$ with $\Delta\mathrm{supply} = 0$ (NAV up).
+7. A sell-route fill moves $L$ toward $2.0$ and does not cut junior NAV beyond the booked route spread.
+8. No rebalance ever reads DEX spot. Route prices are $P \cdot f(L)$, oracle and schedule only.
+9. $\mathrm{CR}_{\mathrm{global}} > 1 \Rightarrow$ redeem pays $\le$ assets, remaining CR does not fall.
+10. $\mathrm{CR}_{\mathrm{global}} \le 1 \Rightarrow$ every redeem is pro-rata; no wallet receives more than $\mathrm{shares}/\mathrm{supply}$.
+11. Occupancy never reduces $J_i$ below 0; occupancy is 0 at $L \ge 2.5$.
+12. Creator toggle cannot change after `createLaunch`.
+13. The Launch implementation cannot be `initialize`d twice; clones only. It is constructed with `initialized = true`.
+14. **vHFyc reconciles:** $S_i = \text{minted}_i - \text{burned}_i$, and $\text{highWater}_i \ge S_i$.
+15. **The pairing fee is billed once:** $\texttt{pairingBilled}_i \le \texttt{seniorHighWater}_i$. Senior that leaves and returns is never charged twice for the same dollars.
+16. **The quoted price stays reachable:** $\texttt{juniorEth}_i \le \texttt{reserveEth}_i + \max(\texttt{vaultEth}_i - S_i/P,\ 0)$ — that is, any gap is never larger than what `rebalanceToReserve` is allowed to move.
+17. **Idle collateral is real:** the Earn Pool's WETH balance covers $E_{\mathrm{idle}}$, and its USDG balance covers $U_{\mathrm{idle}}$.
+
+## What is *not* an invariant
+
+- $L_i = 2$ at all times. The band is the invariant, and the routes are an incentive, not a guarantee: if nobody fills, a pool stays drifted.
+- Identity 2 holds exactly only while a price exists. The price-free `emergencyRedeem` retires the same *fraction* of a pool's claim as it takes of its collateral, and those are equal in value only when a feed exists to say so — which is precisely when that path is not in use.
+- $\mathrm{NAV} \ge 1$. After a −50% gap, leftover / supply can print below $\$1$.
+- Occupancy rate = holder APY. `fundingRateWad` is what 2x coins pay on attached senior; `earnPoolApyWad` is what holders earned. See [the Earn Pool](/protocol/earn-pool).

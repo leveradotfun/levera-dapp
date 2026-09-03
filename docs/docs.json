@@ -1,0 +1,128 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "palm",
+  "name": "HoodFrenzy",
+  "description": "Pump.fun-style memecoin launchpad on Robinhood Chain, with an optional 2x overlay rented from a dollar-senior Earn Pool.",
+  "colors": {
+    "primary": "#C8FF00",
+    "light": "#D4FF4D",
+    "dark": "#A3CC00"
+  },
+  "favicon": "/favicon.png",
+  "logo": {
+    "light": "/logo.png",
+    "dark": "/logo.png"
+  },
+  "appearance": {
+    "default": "dark",
+    "strict": false
+  },
+  "styling": {
+    "latex": true,
+    "eyebrows": "section"
+  },
+  "fonts": {
+    "family": "Inter"
+  },
+  "icons": {
+    "library": "lucide"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Launchpad",
+        "href": "http://localhost:3002"
+      },
+      {
+        "label": "Console",
+        "href": "http://localhost:3001"
+      }
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com"
+    }
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Getting started",
+        "icon": "rocket",
+        "pages": [
+          "index",
+          "quickstart",
+          "what-this-is-not"
+        ]
+      },
+      {
+        "group": "Protocol",
+        "icon": "scale",
+        "pages": [
+          "protocol/product",
+          "protocol/actors",
+          "protocol/invariants",
+          "protocol/leverage",
+          "protocol/routes",
+          "protocol/netting",
+          "protocol/earn-pool",
+          "protocol/fees",
+          "protocol/occupancy",
+          "protocol/redeem",
+          "protocol/multi-collateral",
+          "protocol/failure-modes"
+        ]
+      },
+      {
+        "group": "Mechanics",
+        "icon": "cog",
+        "pages": [
+          "mechanics/bonding-curve",
+          "mechanics/graduation",
+          "mechanics/amm",
+          "mechanics/harvest",
+          "mechanics/clones"
+        ]
+      },
+      {
+        "group": "Chain",
+        "icon": "link",
+        "pages": [
+          "chain/robinhood",
+          "chain/oracles",
+          "chain/deploy"
+        ]
+      },
+      {
+        "group": "Apps",
+        "icon": "layout-dashboard",
+        "pages": [
+          "apps/frontend",
+          "apps/console",
+          "apps/keepers",
+          "apps/csv",
+          "apps/database"
+        ]
+      },
+      {
+        "group": "Security",
+        "icon": "shield",
+        "pages": [
+          "security/threat-model",
+          "security/pause",
+          "security/testnet"
+        ]
+      },
+      {
+        "group": "Reference",
+        "icon": "book-open",
+        "pages": [
+          "reference/parameters",
+          "reference/formula-sheet",
+          "reference/contracts",
+          "reference/glossary"
+        ]
+      }
+    ]
+  }
+}

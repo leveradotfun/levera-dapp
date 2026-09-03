@@ -1,0 +1,134 @@
+---
+title: Fees
+description: A flat 125 bps, plus a leverage surcharge the destabilising trade pays into the pool as cushion.
+icon: percent
+---
+
+A 5% APR on a coin that lives two minutes is $\sim 0.00002\%$ of senior. Do not try to make occupancy rent pay for a 2-minute frenzy. Do not try to make volume fees pay for a 12-hour book that nobody trades.
+
+The Earn Pool is paid by **three streams with three jobs**. This page is the trade-fee stream. Pairing is on [Graduation](/mechanics/graduation). Occupancy is on [Occupancy](/protocol/occupancy).
+
+## Total trade fee
+
+$$
+f(L) = \underbrace{125\ \text{bps}}_{\text{flat}} + \underbrace{\sigma(L)}_{\text{leverage surcharge}}
+$$
+
+Charged on the **quote leg** — ETH for a WETH-quoted coin, cbBTC for a cbBTC-quoted one — pump.fun-shaped. The flat part is never raised to feed the Earn
+Pool. The surcharge is not income at all — see below.
+
+Buyer pays fee-inclusive; seller receives fee-exclusive.
+
+### Buy (quote in)
+
+$$
+\text{fee} = 125\,\text{bps} \cdot \text{quoteIn}, \quad
+\text{surcharge} = \sigma \cdot \text{quoteIn}, \quad
+\text{net} = \text{quoteIn} - \text{fee} - \text{surcharge}
+$$
+
+### Sell (quote out)
+
+$$
+\text{quoteOut} = \text{grossQuote} - \text{fee} - \text{surcharge}
+$$
+
+On the curve, the contract solves for the **gross** (in quote units) that, after fee, equals the constant-product
+output, so the seller still sees $1.25\%$ off the top.
+
+## The leverage surcharge
+
+The trade that drags the book toward an edge is the one that forces the protocol to act, so it is
+the one that should pay for it. A flat fee makes that externality free and charges it to everybody
+else.
+
+$$
+\sigma(L) = \text{juniorFeeBps}(L) - 50\ \text{bps}
+$$
+
+`juniorFeeBps` is a [piecewise-linear curve](/reference/formula-sheet#piecewise-linear-schedules)
+with two control points per direction — base at the target, maximum at the edge the trade is
+pushing into:
+
+| Trade | At $L^\star = 2$ | At the edge it pushes toward | Ceiling |
+|---|---|---|---|
+| Buy (junior arrives, $L$ falls) | 50 bps | 300 bps at $L = 1.5$ | 700 bps |
+| Sell (junior leaves, $L$ rises) | 50 bps | 300 bps at $L = 2.5$ | 700 bps |
+
+Each direction is **free in the direction that helps**: arriving junior rebuilds the cushion, so it
+is never surcharged when the book is over-levered, and vice versa. With the junior wiped, leaving is
+at the ceiling and arriving is at the floor — new capital is the only thing that can rebuild a
+cushion and must not be taxed like an exit.
+
+<Note>
+This is Hylo's anti-destabilisation fee schedule, as a continuous curve rather than a discrete
+zone table. It is a backstop, not a routine cost: in normal operation the
+[routes](/protocol/routes) and [netting](/protocol/netting) hold the book near target and this
+barely binds.
+</Note>
+
+### The cover surcharge
+
+Exits carry one more term, zero while the Earn Pool is comfortably covered and rising to 400 bps at
+full impairment:
+
+$$
+\text{crSurcharge} = \text{segment}\!\left(\mathrm{CR}_{\text{global}},\ 1.5 \to 1.0,\ 0 \to 400\ \text{bps}\right)
+$$
+
+It lands on **exits only**. Arriving junior brings assets in with no matching liability, so it lifts
+cover — taxing that would discourage the one trade that helps. This is what lets senior redemption
+stay open in every state instead of being gated.
+
+## The surcharge is cushion, not revenue
+
+The surcharge is **not** split with the creator, the protocol or the Earn Pool. It goes straight
+into the AMM reserve via `MemePair.donateEth` and stays with the people still holding the position:
+
+$$
+\texttt{reserveEth} \mathrel{+}= \text{surcharge}, \qquad \texttt{poolEth} \mathrel{+}= \text{surcharge}
+$$
+
+On a 2x pair this raises `juniorEth` and therefore the quote, which is the correct reading of
+"someone gave the pool collateral and asked for nothing". The lifetime total is `cushionEthPaid`.
+
+## Split of the flat 125 bps
+
+| Slice | 2x bps | 1x bps | Destination |
+|---|---|---|---|
+| Creator | 30 | 30 | The coin's **quote asset** (claimable — cbBTC on a cbBTC coin, WETH on a WETH one), or HFyc mint-at-NAV **only if 2x and the creator opted in** |
+| Protocol | 45 | 95 | HFyc mint-at-NAV to the treasury (backed; NAV unchanged) |
+| Earn Pool holders | 50 | **0** | USDG in, **no mint**, NAV up. **2x only.** |
+
+On-chain this is `Launch._accrueFeeEth`:
+
+- Creator always takes $30/125$ of the fee (in quote units — the amounts are denominated in the coin's quote asset whatever it is).
+- If `!leverageEnabled`, the rest ($95$ bps of notional) is protocol. Return. No holder slice.
+
+<Note>
+**A 1x creator cannot opt into HFyc.** `LaunchpadFactory.createLaunch` requires
+`leverageEnabled || !creatorFeeInHfyc` ("1x quote fees"): a 1x coin never pairs against the Earn
+Pool, so paying its creator in HFyc would mint them senior out of trade fees with no occupancy and
+no pairing behind it. A 2x creator chooses freely — the quote asset or HFyc — and the choice is
+frozen at creation.
+</Note>
+
+## The pairing fee
+
+$$
+\text{pairingFee} = 50\ \text{bps} \times \left(S_{\text{after}} - \texttt{pairingBilledUsd}\right)
+$$
+
+Billed against the **basis already charged**, not against each attach. Three attaches summing to
+$S$ pay exactly the same 50 bps as one attach of $S$ — and, more importantly, senior that leaves on
+a route fill or a redemption peel and then comes back is **not charged twice for the same dollars**.
+
+<Warning>
+Charging per attach would make every detach/reattach cycle a fresh 50 bps out of the junior. Both
+sides of that cycle are permissionless, so it would be a way to mint Earn Pool yield by shuttling
+capital between two pools rather than by doing anything useful. The invariant suite asserts
+`pairingBilledUsd <= seniorHighWaterUsd` after every call.
+</Warning>
+
+The fee is paid from `vaultEth`, converted to USDG and deposited as unminted yield, so attaching
+senior slightly raises that pool's leverage.

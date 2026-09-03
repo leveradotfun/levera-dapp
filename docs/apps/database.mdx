@@ -1,0 +1,76 @@
+---
+title: Postgres store
+description: Durable home for protocol and research data. The schema applies itself; a deploy wipes it clean.
+icon: database
+---
+
+Everything that used to live in browser `localStorage` and needed to survive a refresh: NAV history,
+price points, the trade ledger, rebalances, X profiles, and per-asset `collateral_samples`.
+
+```bash
+createdb hoodfrenzy
+```
+
+That is the whole setup.
+
+## The schema applies itself
+
+`ensureSchema()` runs before the first query in every process. `db/schema.sql` is idempotent
+throughout — `CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS` — and the result is cached per
+process, so after the first call it is a boolean check.
+
+<Note>
+A manual `psql -f schema.sql` step is a footgun on a research repo. A fresh clone, a dropped
+database, or a schema change that landed in git but not in the local Postgres all fail the same way:
+at the first write, mid-session, as an opaque 500 from an API route. By then whatever the session was
+measuring is already lost.
+</Note>
+
+A failed migration is deliberately **not** cached, so a database that was not up yet succeeds on the
+next attempt rather than poisoning the process until it restarts.
+
+## Tables
+
+| Table | Holds |
+|---|---|
+| `hfyc_nav` | NAV, occupancy, cash yield, liability, utilisation over time |
+| `price_points` | Per-launch price series |
+| `ledger_totals` + `trades` | Per-trader position and the trades behind it |
+| `rebalances` | Rebalance history per launch |
+| `collateral_samples` | One row per listed collateral per sample |
+| `x_profiles` | Wallet → X account |
+
+`collateral_samples` exists for the same reason [`collaterals.csv`](/apps/csv) does: the senior claim
+is one unit across assets, the risk machinery is not, and a single aggregate row stops meaning
+anything the moment the book holds two.
+
+## Wiping
+
+A console **Deploy wipe** truncates every session table and clears the research CSVs, automatically,
+before the new contracts go up.
+
+```bash
+cd db
+npm run wipe     # clean slate by hand
+npm run counts   # row counts per table
+npm run smoke    # schema + store round trip + wipe
+```
+
+<Warning>
+The wipe is deliberately **not** scoped to the outgoing factory. That address is read from a local
+file the wipe itself deletes, so scoping it left earlier sessions' rows behind after a crash, on a
+fresh clone, or on a second redeploy in a row. Two incompatible books in one series is worse than no
+series: it silently changes what every aggregate means, and nothing in the data says which rows came
+from which deployment.
+</Warning>
+
+`x_profiles` survives. It maps a wallet to the X account that claimed it, which is not session state
+— wiping it would make people reconnect their identity because somebody restarted a fork.
+
+## Connection
+
+```
+DATABASE_URL=postgresql://mac@127.0.0.1:5432/hoodfrenzy
+```
+
+Override in `ui/.env.local` and `frontend/.env.local`. See `.env.example`.

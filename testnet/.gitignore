@@ -1,0 +1,9 @@
+# Secrets. testnet/.env holds DEPLOYER_PRIVATE_KEY and FAUCET_PRIVATE_KEY.
+# There is no .gitignore at the repo root, and contracts/.gitignore and frontend/.gitignore
+# only cover their own directories -- so before this file existed, `git init && git add .`
+# would have committed both keys.
+.env
+.env.*
+!.env.example
+
+node_modules/

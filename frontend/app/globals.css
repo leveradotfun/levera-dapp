@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #131514;
+  --card: #141414;
+  --elevated: #1a1a1a;
+  --surface: #1e1e1e;
+  --hover: #222222;
+  --accent: #ECE3D1;
+  --accent-dim: #C9BFAE;
+  --accent-ink: #0a0a0a;
+  --foreground: #fafafa;
+  --secondary: #a1a1aa;
+  --muted: #71717a;
+  --border: #252525;
+  --green: #22c55e;
+  --red: #ef4444;
+}
+
+html {
+  background: var(--bg);
+  color: var(--foreground);
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Inter", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+input, select, textarea, button {
+  font-family: inherit;
+}
+
+@keyframes vibrate {
+  0%, 100% { transform: translateX(0); }
+  10% { transform: translateX(-1px) rotate(-0.5deg); }
+  20% { transform: translateX(1px) rotate(0.5deg); }
+  30% { transform: translateX(-1px); }
+  40% { transform: translateX(1px); }
+  50% { transform: translateX(-1px) rotate(0.5deg); }
+  60% { transform: translateX(1px) rotate(-0.5deg); }
+  70% { transform: translateX(-1px); }
+  80% { transform: translateX(1px); }
+  90% { transform: translateX(-1px) rotate(-0.5deg); }
+}
+
+.animate-vibrate {
+  animation: vibrate 0.4s ease-in-out infinite;
+}

@@ -1,0 +1,72 @@
+---
+title: Bonding curve
+description: Constant product on virtual reserves, quoted and custodied in ETH. m = 4/3.
+icon: chart-line
+---
+
+Every coin is an EIP-1167 clone of `Launch`:
+
+- **1,000,000,000** tokens minted to the launch contract at creation.
+- **800,000,000** sit on a constant-product bonding curve.
+- **200,000,000** plus the ETH raise seed a TOKEN/ETH AMM at graduation.
+
+The curve is quoted **in ETH**, not USD, and it custodies ETH. A USD-quoted curve holding ETH is insolvent the moment the oracle moves, because it owes dollars it does not have.
+
+USD is snapshotted at the creation-time oracle for **display only**. The on-chain cap is `targetRaiseEth`, so the goalpost cannot drift with the dollar price. Factory floor: `MIN_RAISE_ETH = 0.1 ether` (below that, `virtualEth` can round to zero and buys divide by zero). Headline default: **6.9 ETH**.
+
+## Virtual reserves
+
+Let $T$ be the target raise in ETH and $C = 8 \times 10^8$ the sellable supply (18 decimals on-chain). Shape $m = 4/3$:
+
+$$
+m = \frac{4}{3}, \qquad
+V_{t0} = C \cdot m, \qquad
+V_{u0} = (m - 1) \cdot T
+$$
+
+On-chain `CURVE_SHAPE_M = 1.333\ldots \times 10^{18}` (WAD). For $T = 6.9$ ETH:
+
+$$
+V_{t0} \approx 1.0667 \times 10^9, \qquad V_{u0} = 2.3\ \mathrm{ETH}
+$$
+
+$$
+k = V_{t0} \cdot V_{u0}
+$$
+
+Selling the full 800M raises **exactly** $T$, and the last curve tick equals the AMM listing:
+
+$$
+P_{\mathrm{list}} = \frac{T}{2 \times 10^8}
+$$
+
+That identity is why $m = 4/3$: the virtual token surplus is $C/3$, the virtual ETH is $T/3$, so after 800M is sold the spot is $T / 200\mathrm{M}$.
+
+## Buy
+
+Fee first, then constant product on virtual reserves:
+
+$$
+\mathrm{fee} = 0.0125 \cdot \mathrm{ethIn}, \qquad
+V_u' = V_u + \mathrm{netEth}, \qquad
+V_t' = k / V_u', \qquad
+\Delta t = V_t - V_t'
+$$
+
+Tokens come from `curveSellable` (real inventory). `realEthRaised` tracks net ETH in.
+
+A **creator buy** is an ordinary curve buy (same 1.25% fee). It **does** move the spot: more ETH in $V_u$ means a higher price for everyone after. Graduation listing is independent of how much the creator bought; leftover curve inventory plus the raise still seed 200M / 6.9 ETH.
+
+Logged to `data/events.csv` as a `LAUNCH` row: `launch_spot_eth`, `price_after_creator_buy_eth`, `creator_buy_impact_pct`, each with a `_wei` companion so a float64 read cannot silently render them as zero.
+
+## Sell
+
+Solve for the gross ETH out of the virtual pool, then take 1.25% off that gross. Real ETH paid to the seller cannot exceed `realEthRaised`.
+
+## Circulating vs totalSupply
+
+`totalSupply()` is always 1B. Market cap and curve progress must use **circulating** and `800M − curveSellable`, not `totalSupply()`. Using `totalSupply()` for either was a priced-in bug and is fixed.
+
+## Why not USD
+
+If the curve quoted dollars and held ETH, an oracle print that moves $P$ would change the dollar value of inventory without changing the dollar liability of the remaining curve. The book would be insolvent or over-reserved depending on the direction. Quoting and custodying the same asset makes the curve's solvency independent of $P$. USD is a display layer.

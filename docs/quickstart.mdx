@@ -1,0 +1,78 @@
+---
+title: Quickstart
+description: Run HoodFrenzy against a Robinhood Chain Anvil fork.
+icon: play
+---
+
+Always develop against a **Robinhood fork**. Plain Anvil chain `31337` is rejected by the apps.
+
+## Stack
+
+| Piece | Port | Role |
+|---|---|---|
+| `contracts/` | — | Solidity, tests, `./anvil-fork.sh` |
+| `ui/` | 3001 | Admin console: deploy, bots, keeper, loop, CSV snapshots |
+| `frontend/` | 3002 | Public launchpad: create coins, trade, HFyc |
+| `docs/` | 3000 | This Mintlify site (`mint dev`) |
+
+## Run the fork
+
+```bash
+./contracts/anvil-fork.sh
+```
+
+This starts Anvil as a **shanghai** fork of Robinhood Chain **4663**. Wipe in the console reverts an `evm_snapshot` taken at fork start — a bare `anvil_reset` disables the fork and must not be used.
+
+<Warning>
+  Do not point the apps at a vanilla `anvil` on 31337. Canonical token and feed addresses in `contracts/src/chain/Robinhood.sol` are chain **4663** only.
+</Warning>
+
+## Tests and apps
+
+<Steps>
+  <Step title="Contracts">
+    From `contracts/`:
+
+    ```bash
+    forge test --nmt invariant
+    ```
+
+    After any Solidity change:
+
+    ```bash
+    forge build && python3 extract-abis.py && python3 audit-app-calls.py
+    ```
+
+    Launch clones must stay under the EIP-170 24,576-byte CREATE cap. Check with `forge build --sizes`.
+  </Step>
+  <Step title="Admin console">
+    ```bash
+    cd ui && npm run dev
+    ```
+
+    Opens on [http://localhost:3001](http://localhost:3001). Deploy is always a tab. Human launches from the public app redirect to `/coin/:address` immediately; `/ui` stays available so you can wipe and redeploy without waiting on a stale-state banner.
+  </Step>
+  <Step title="Public launchpad">
+    ```bash
+    cd frontend && npm run dev
+    ```
+
+    Opens on [http://localhost:3002](http://localhost:3002). Create a 1x or 2x coin, trade the curve, deposit HFyc, watch the Earn Pool page for NAV, realised APY and cover.
+  </Step>
+  <Step title="Docs preview">
+    ```bash
+    cd docs && mint dev
+    ```
+  </Step>
+</Steps>
+
+## What you should see
+
+1. Console **Deploy** writes the Earn Pool, a launchpad factory, a pair factory, a shockable oracle over the live feed, mock USDG/WETH (fork only), and an `OracleSwapRouter`.
+2. Keepers harvest, accrue occupancy, correct reserve cover and sweep orphans. Rebalancing itself is a posted route somebody fills.
+3. 2x coins that graduate while idle USDG is short list **partially levered**. `tryPair()` tops them up as deposits arrive. Never ghost-mint senior.
+4. `/hfyc` records NAV every 5 minutes in `localStorage` keyed by factory. **24h APY** and **7d APY** print only once that factory has ~90% of the window in samples — they will not annualize a 4-hour bot run.
+
+## Research CSV
+
+Three append-only files under `data/` — `book.csv`, `pools.csv`, `events.csv` — served at `/api/session-log?file=…`. See [Research files](/apps/csv).

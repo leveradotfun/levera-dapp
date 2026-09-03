@@ -1,0 +1,156 @@
+---
+title: Research files
+description: Four append-only CSVs — the book, every pool, every collateral, and everything that happened.
+icon: table
+---
+
+Four files under `data/`, served at `/api/session-log?file=…` on either app.
+
+| File | One row per | Answers |
+|---|---|---|
+| `book.csv` | interval | What is the senior claim worth, what backs it, what did it earn |
+| `pools.csv` | pool, per interval | Where is each pool's leverage, and is its quoted price reachable |
+| `collaterals.csv` | listed asset, per interval | Each asset's price, cover, cap, headroom and rent |
+| `events.csv` | discrete event | What happened, and what failed |
+
+Four files rather than one wide table, because the shapes are genuinely different. Forcing
+them into one row type produces a file where a third of the columns are blank in every line and the
+rest mean different things depending on which row you are reading.
+
+## Rules the schema follows
+
+Each of these exists because its absence cost real data.
+
+**Every row carries `writer` and `seq`.** Three processes append concurrently — the console, the
+public app, and the keeper. Without attribution and a per-writer sequence their rows interleave into
+something no analysis can pull apart, and a row with no writer at all cannot be assigned to a run.
+The API rejects a row with no `writer`.
+
+**Every sub-1e-6 price ships a `_wei` companion.** Curve prices are around $2\times10^{-9}$ ETH,
+which float64 renders as `0` at default precision. The values are not missing, they are unreadable —
+so `launch_spot_eth` is always accompanied by `launch_spot_eth_wei`, and analysis that needs
+precision uses the integer.
+
+**Nothing is named after a quantity it is not.** `reserve_tvl_usd` is the AMM reserve;
+`pool_tvl_usd` is the whole book. Leverage is computed off the second, and computing it off the
+first gives a negative junior. On a 1x pool they coincide; on a 2x pool they differ by the vault.
+
+**A column that cannot be computed is blank.** Never zero, never a stale carry-forward. When the
+oracle is down, `oracle_live` is `false` and the priced columns are empty — that is a fact about the
+feed, not a gap in the data.
+
+## The attribution columns
+
+`realized_leverage`, `tracking_error_pct`, `eth_move_pct` and `token_move_pct` are blank unless the
+collateral price actually moved by at least **0.5%** since the session's baseline.
+
+<Warning>
+This is not a bug, and it is the single most important thing to understand about reading these
+files. Dividing a token return by a zero collateral move does not measure leverage — it reports the
+token's own drift wearing leverage's label. A forked chain pins its Chainlink feed at the fork
+block, so on an untouched session these columns are blank **because there is nothing to divide by**.
+</Warning>
+
+To make them fill, drive the price: the console's **Collateral shock** panel applies a multiplier to
+the feed and stamps every row with `oracle_shock_pct` and `shock_path_id`, so a shocked session can
+never be mistaken for a live one. See [the console](/apps/console).
+
+Note also that `realized_leverage` is close to an identity rather than an independent measurement:
+`token_price = memeNAV / reserveToken` and `L = TVL / memeNAV`, so $\Delta\text{token} / \Delta P$
+is algebraically $L$. The column worth watching is `tracking_error_pct` — the part of the token move
+that $L \times \Delta P$ does **not** explain, which is trading flow.
+
+## `book.csv`
+
+The senior claim, what backs it, and what it earned.
+
+| Group | Columns |
+|---|---|
+| Claim | `hfyc_nav`, `hfyc_supply`, `hfyc_deposit_minted`, `hfyc_fee_minted`, `hfyc_liability_usd` |
+| Assets | `hfyc_idle_usdg`, `total_collateral_usd`, `total_assets_usd` |
+| Split | `total_senior_usd`, `total_junior_nav_usd` |
+| Cover | `global_cr`, `eth_drop_to_impairment_pct` |
+| Price of senior | `utilization`, `occupancy_rate_apr` |
+| Return | `earn_pool_apy`, `earn_pool_window_*`, `yield_occupancy_share`, `yield_cash_share` |
+
+`occupancy_rate_apr` is $r(U)$ — what 2x coins pay on attached senior. `earn_pool_apy` is what
+holders actually earned. They are not the same number and must never be shown as if they were; see
+[the Earn Pool](/protocol/earn-pool).
+
+## `pools.csv`
+
+Every registered launch, every interval — not just whichever one the console has selected. Most of
+what this protocol does is move senior between pools, and that is invisible in a single-pool series.
+
+| Group | Columns |
+|---|---|
+| Buckets | `pool_eth`, `vault_eth`, `reserve_eth`, `cushion_eth_paid` |
+| Value | `pool_tvl_usd`, `reserve_tvl_usd`, `senior_usd`, `junior_nav_usd` |
+| Position | `leverage`, `cr` |
+| vHFyc | `senior_minted_usd`, `senior_burned_usd`, `senior_high_water_usd`, `pairing_billed_usd` |
+| Reachability | `senior_claim_eth`, `senior_coverage`, `reserve_cover` |
+| Routes | `sell_route_*`, `buy_route_*`, `route_pnl_usd` |
+| Cost to trade | `trade_fee_bps_buy/sell`, `surcharge_bps_buy/sell` |
+| Headroom | `eth_move_to_sell_route_pct`, `eth_move_to_wipe_pct` |
+
+`eth_move_to_wipe_pct` is derived from the pool's **live** leverage, not from the $L^\star = 2$
+target. A drifted pool is materially closer to its wipe than the target implies, and only the live
+figure is true.
+
+Cumulative `senior_minted_usd` far above the live `senior_usd` is churn: senior being shuttled
+rather than put to work.
+
+## `collaterals.csv`
+
+One row per listed collateral per interval. The senior claim is one unit across assets; the risk
+machinery is not, and a single aggregate stops meaning anything the moment the book holds two.
+
+| Group | Columns |
+|---|---|
+| Mark | `collateral_price_usd`, `collateral_oracle_live` |
+| Holdings | `collateral_pooled`, `collateral_idle`, `collateral_senior_usd` |
+| Cover | `collateral_cr` |
+| Routing | `collateral_cap_bps`, `collateral_headroom_usd`, `collateral_routing_apr`, `collateral_funding_apr` |
+| State | `collateral_enabled` |
+
+`collateral_oracle_live` is **per asset**. A blank price with `false` beside it is a fact about that
+one feed, and the whole point of marking each leg separately is that it does not take the rest of the
+book's valuation down with it.
+
+`book.csv` reports `total_collateral_usd` rather than a quantity, because collateral across assets
+cannot be summed. `pools.csv` carries `collateral_token`, without which every per-pool reading is
+ambiguous once there is more than one listing.
+
+## `events.csv`
+
+`SESSION_START`, `LAUNCH`, `ROUTE_FILL`, `NETTED`, `REDEEM`, `MINT`, `SHOCK`, `ERROR`.
+
+Each type populates its own column group and leaves the rest blank. `ROUTE_FILL` carries the side,
+the size, the posted price and the signed `route_pnl_usd`, so the cost of de-risking is an
+attributable ledger rather than slippage that vanished into a fill.
+
+`error_message` leads with the **decoded** revert. `Launch` reverts with custom errors rather than
+strings — they are dramatically smaller, which is what keeps it under the EIP-170 cap — so ethers
+reports an undecodable `0x1a2b3c4d` unless it is handed the ABI. The logger decodes the selector
+against the `Launch` and `EarnPool` ABIs and puts the name first, because a reason nobody can read
+turns the error log from a diagnosis into a row count.
+
+## Clearing them
+
+A console **Deploy wipe** clears all four automatically, alongside the Postgres session tables. By
+hand:
+
+```bash
+curl -X DELETE 'http://localhost:3001/api/session-log'            # all four
+curl -X DELETE 'http://localhost:3001/api/session-log?file=pools' # one
+```
+
+Truncates back to headers. Starting a research run on top of a previous deployment's rows puts two
+incompatible books in one series.
+
+## Schema changes
+
+The API migrates a file in place when the schema changes: old rows keep their values **by column
+name**, and columns that did not exist then are blank. Writing the header only on creation is how a
+file ends up describing $N$ fields while new rows carry $N+k$, silently shifting every value under
+the wrong heading from that point on.

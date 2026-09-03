@@ -1,0 +1,55 @@
+---
+title: Actors and tokens
+description: Who holds what, and what they are allowed to do.
+icon: users
+---
+
+## Claims
+
+| Who | Holds | What they are |
+|---|---|---|
+| HFyc depositor | **HFyc** | Senior. Dollar claim. No ETH upside once paired. Paid in NAV (unminted fees, pairing bps, occupancy). |
+| Meme buyer | The launch token | Junior. 100% of ETH delta. Pays fees + rent. Leverage is rented and can fall. |
+| Protocol treasury | Fee-minted **HFyc** (always liquid) | Aligned with HFyc. Not paid ETH. |
+| Creator | ETH **or** fee-minted HFyc | Toggle set once at launch, immutable. 1x is ETH-only. |
+
+## Trusted roles (short)
+
+Full table in [Threat model](/security/threat-model).
+
+| Role | Powers |
+|---|---|
+| Earn Pool `owner` | `setFactory`, `setGuardian`, `unpause`, two-step `transferOwnership`. Production: multisig + timelock. |
+| Earn Pool `guardian` | `pause` only. Cannot unpause, cannot move cash. |
+| Factory `owner` | `setProtocolFeeRecipient`. Cannot register pools except by `createLaunch`. |
+| Launch `creator` | Claims creator ETH fees. Cannot attach/detach 2x after launch. |
+| Keepers | Permissionless: `graduate`, `tryPair`, `fillSellRoute`, `fillBuyRoute`, `netSeniorBetween`, `rebalanceToReserve`, `harvest`, `accruePools`. |
+| Oracle | Single ETH/USD + USDG/USD. Fail-closed after 25 h or $>2\%$ confidence. |
+| Swap venue | `ISwapRouter`. Live path is `OracleSwapRouter` or a real AMM. **Not** `MockSwapRouter`. |
+
+## Tokens on Robinhood
+
+| Token | Role | Decimals (live) |
+|---|---|---|
+| ETH / WETH | Collateral. Curve custody, AMM reserve, vault collateral. | 18 |
+| USDG | Cash leg. Idle HFyc, pairing proceeds, harvest proceeds. | 6 on mainnet |
+| HFyc | Senior ERC-20. Issued at NAV. | 18 |
+| Launch token | Junior. Fixed 1,000,000,000 supply. | 18 |
+
+<Danger>
+  Fork and testnet use **mock 18-dec USDG**. Live Robinhood USDG is 6-dec. Production must not use the mocks. See [Testnet](/security/testnet).
+</Danger>
+
+## Issuance paths
+
+There is **no unpaired-collateral queue**. A dollar claim against unpaired collateral is already undercollateralized on the next tick down, so deposits are converted to cash on arrival and the protocol buys collateral back only at the instant a pool pairs.
+
+| Function | Assets in | Shares out | NAV |
+|---|---|---|---|
+| `mintWithUsdg` | USDG | $\mathrm{usd} / \mathrm{NAV}$ | Unchanged |
+| `mintWithEth` | ETH, swapped to USDG in the same tx | $\mathrm{usdReceived} / \mathrm{NAV}$ | Unchanged |
+| `feeMint` | USDG already pulled | $\mathrm{usdReceived} / \mathrm{NAV}$ | Unchanged |
+| `depositYield` | USDG | **None** | Up |
+| `accrueFunding` | **None** (split changes) | **None** | Up; junior down |
+
+ETH is re-acquired only when a 2x pool calls `acquireSenior`: idle USDG is lent, sold for ETH, and parked in `vaultEth` atomically with `seniorUsd += take`.

@@ -1,0 +1,24 @@
+# Repo-wide safety net. Individual packages keep their own .gitignore as well; this exists so
+# that a secret in a directory nobody thought to cover is still excluded by default.
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+node_modules/
+.DS_Store
+
+# contracts/, ui/, and landing-page/ are each their own independent git repository (contracts/
+# and ui/ locally, landing-page/ pushed to github.com/hoodfrenzy/landing-page). They deliberately
+# do not intertwine with this repo or each other -- no submodule, no gitlink, no shared history.
+# Manage each one from inside its own directory.
+/contracts/
+/ui/
+/landing-page/
+
+# Local deployment records point at addresses that only exist on one machine's fork.
+data/anvil-fork.json
+
+# A personal purchase receipt, not project source. Remove this line if you actually want it
+# versioned.
+/namecheap-order-212749000.pdf

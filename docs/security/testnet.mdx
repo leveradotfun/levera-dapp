@@ -1,0 +1,46 @@
+---
+title: Testnet
+description: Fine as a mock prototype. Not a copy-paste of the fork deploy.
+icon: flask-conical
+---
+
+**Yes** as a mock prototype on Robinhood testnet (chain `46630`). **No** as a copy-paste of the fork deploy.
+
+## What is already fine
+
+- Mock 18-dec USDG
+- `OracleSwapRouter` inventory mint
+- Guardian pause
+- 1x fee split 30 / 95 / 0
+- CEI, factory-only `registerPool`, occupancy cursor, peel redeem
+
+## The `/testnet` deploy
+
+`testnet/deploy.mjs` fills the deploy gap (there is deliberately no `DeployTestnet.s.sol` in
+`contracts/` — the testnet path composes compiled artifacts from outside the protocol source).
+It deploys the full stack — both launchpads, Earn Pool, oracle, routers, QuoteZap — to chain
+`46630`, with **both** launchpads authorised on the pool.
+
+What it keeps honest:
+
+| Piece | Status on 46630 |
+|---|---|
+| Prices | **Real.** No Chainlink feeds exist on testnet, so the harness reads the real 4663 feeds over `eth_call` and seeds the mock oracles with them. `refresh-prices.mjs` re-syncs; price pins override; ETH/cbBTC fail closed. |
+| Tokens | Mocks: 18-dec USDG (live is 6-dec — a real production path must not copy this), an 8-dec cbBTC stand-in, mock WETH. |
+| Router | `OracleSwapRouter`, fills at the oracle and mints output — no inventory to fund. |
+| Keepers | Still unsolved: need a funded key in a process, not a browser tab. |
+
+App wiring: set `NEXT_PUBLIC_RPC_URL=https://rpc.testnet.chain.robinhood.com` and the app's
+provider, wallet transport, storage key and deployment file (`data/deployment-testnet.json`) all
+follow that one switch. See `testnet/README.md`.
+
+## Prototype checklist
+
+1. ~~Map testnet WETH / USDG / feeds~~ — feeds do not exist on testnet; real 4663 prices seed the mock oracles instead, and the tokens are mocks, stated as such.
+2. Fund a deployer from the faucet: <https://faucet.testnet.chain.robinhood.com>.
+3. `node testnet/deploy.mjs` — implementation, EarnPool, pair factory, both launchpad factories, oracles, routers.
+4. `data/deployment-testnet.json` is written automatically; the apps read it with `?chain=testnet`.
+5. Run keepers from a process with a key, not only from `/ui`.
+6. Do not advertise occupancy APR as APY. Do not seed the book with Anvil-style 10k ETH.
+
+Explorer: `https://explorer.testnet.chain.robinhood.com`. Faucet: `https://faucet.testnet.chain.robinhood.com`.

@@ -1,0 +1,77 @@
+---
+title: AMM and k = xy
+description: 1x prices off reserve ETH. 2x prices off junior ETH. Swaps always pay from reserveEth.
+icon: chart-candlestick
+---
+
+`MemePair` is a Uniswap V2-style TOKEN/WETH pair with one fork.
+
+## Pricing function
+
+$$
+y_{\mathrm{price}} =
+\begin{cases}
+\texttt{reserveEth} & \text{1x} \\
+\texttt{juniorEth} = J / P & \text{2x (fall back to reserveEth if } J = 0\text{)}
+\end{cases}
+$$
+
+$$
+k = \texttt{reserveToken} \cdot y_{\mathrm{price}}
+$$
+
+Spot:
+
+$$
+p_{\mathrm{ETH}} = \frac{y_{\mathrm{price}}}{\texttt{reserveToken}}
+$$
+
+On a just-paired 2x book, $y_{\mathrm{price}} \approx 2 \times \texttt{reserveEth}$, so spot is $\sim 2\times$ a 1x listing of the same raise. ETH moving 10% moves junior NAV 20%, which moves $y_{\mathrm{price}}$ 20%, which moves spot 20%. Vault ETH **prices** the book without sitting in it.
+
+## Swaps pay from reserveEth only
+
+### ETH in, tokens out
+
+`Launch` wraps net ETH, sends WETH to the pair, then calls `swapEthForTokens`.
+
+$$
+k = r_t \cdot y, \qquad y' = y + \mathrm{ethIn}, \qquad r_t' = k / y', \qquad \Delta t = r_t - r_t'
+$$
+
+`reserveEth` increases by `ethIn`. On 2x, $y$ is junior ETH, so the same ETH in buys fewer tokens than on 1x — the levered book is thicker in the pricing coordinate.
+
+### Tokens in, ETH out
+
+Tokens are transferred to the pair first. Ideal output:
+
+$$
+r_t'^{\mathrm{ideal}} = r_t + \mathrm{tokensIn}, \qquad
+y'^{\mathrm{ideal}} = k / r_t'^{\mathrm{ideal}}, \qquad
+\mathrm{gross} = y - y'^{\mathrm{ideal}}
+$$
+
+Then **cap**:
+
+$$
+\mathrm{ethOut} = \min(\mathrm{gross},\ 0.15 \cdot \texttt{reserveEth},\ \texttt{reserveEth})
+$$
+
+Paid from `reserveEth` as native ETH. Vault ETH is unreachable.
+
+### Cap must re-derive $k$
+
+When the 15% cap binds, `reserveToken` is re-derived from the ETH **actually** paid:
+
+$$
+r_t' = k / (y - \mathrm{ethOut})
+$$
+
+**Not** set to $r_t + \mathrm{tokensIn}$. Booking the full `tokensIn` against a capped `ethOut` permanently broke $k$ and let a cycle of sell-into-cap / buy-back drain real ETH. Extra tokens sit as unaccounted balance (same as a bare transfer). Oversizing a sell into the cap is wasteful for the sender, never profitable.
+
+## Why vault ETH is not dumpable
+
+Traders can only take `reserveEth`. Route fills, redemption peels and reallocation all move `vaultEth`, and none of them touch the AMM — a meme dump cannot reach the senior's collateral. The senior still has **gap risk** on it, because it is still ETH, which is what the [sell route](/protocol/routes) is for.
+
+The mirror problem is that the AMM quotes off `juniorEth` but can only *pay* from `reserveEth`. On a rally part of the vault stops backing senior and starts belonging to the junior while sitting where a seller cannot reach it: see [reserve cover](/protocol/leverage#the-two-cover-ratios) and `rebalanceToReserve`.
+
+Coin page copy labels the vault "not dumpable."

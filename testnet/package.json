@@ -1,0 +1,19 @@
+{
+  "name": "hoodfrenzy-testnet",
+  "private": true,
+  "type": "module",
+  "description": "Deploy the HoodFrenzy launchpad stack to Robinhood Chain testnet (chain 46630) with mock oracles seeded from the real mainnet feeds.",
+  "scripts": {
+    "deploy": "node deploy.mjs",
+    "verify": "node verify.mjs",
+    "refresh-prices": "node refresh-prices.mjs",
+    "hash-artifacts:check": "node hash-artifacts.mjs check",
+    "hash-artifacts:write": "node hash-artifacts.mjs write"
+  },
+  "dependencies": {
+    "ethers": "^6.17.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

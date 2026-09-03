@@ -1,0 +1,25 @@
+---
+title: Keepers
+description: Permissionless. Occupancy is a timestamp index; harvest and protect are not.
+icon: bot
+---
+
+There is no 1 Hz keeper in the protocol. Anyone may call:
+
+| Call | Why it matters if nobody calls it |
+|---|---|
+| `Launch.harvest` | Holder/protocol/creator-in-HFyc ETH sits uncounted. NAV does not include it. |
+| `Launch.protect` | $L$ can print above 2.5. 15% of vault per tx, so a lagging book ratchets slowly. |
+| `Launch.fillBuyRoute` | Optional, and filled by an outsider. The 2x overlay stays slack after a rally until somebody does. |
+| `Launch.accrueFunding` / `EarnPool.accruePools` | Occupancy is still *owed* (timestamp index) but not on `seniorUsd` / `liability` until a touch. Redeem settles up to 32 pools first. |
+| `Launch.tryPair` / graduate | 2x coins sit under-levered if idle arrived after graduation. |
+
+The public app and the console run these on an interval for as long as the tab is open. Production needs a funded key and a process that does not depend on a browser tab.
+
+## Liveness versus safety
+
+- Occupancy **safety**: rent cannot run while $L \ge 2.5$, and cannot push $J < 0$, even if nobody accrues for a week. The next touch catches up at the live $r(U)$.
+- Rebalance **liveness**: not automatic. The routes are an incentive, not a guarantee — a grind with nobody filling leaves the book levered. A −50% gap cannot be saved by anyone.
+- Harvest **safety**: unharvested ETH is not HFyc's. It cannot be stolen by traders (not in `poolEth`). It can be stuck if the USDG venue is thin (`minOut`).
+
+The route spread is the incentive to fill: near the inner bound a filler pays a premium, at the outer bound it receives a discount. No keeper bounty is needed or wired.

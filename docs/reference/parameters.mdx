@@ -1,0 +1,90 @@
+---
+title: Locked parameters
+description: Live constants in Launch.sol and HFyc.sol, with spec deltas called out.
+icon: sliders
+---
+
+## Leverage
+
+| Parameter | Value | Notes |
+|---|---|---|
+| $L^\star$ | $2.0$ | CR $200\%$ |
+| No-action band | $[1.5,\ 2.5]$ | Where the fee curve is flat |
+| Sell route opens | $L = 2.20$ | Before the old hard edge, so ordinary drift is opposed |
+| Sell route crossover | $L = 2.50$ | Exactly oracle spot |
+| Sell route outer | $L = 3.00$ | Max subsidy, clamped at $-200$ bps |
+| Buy route opens | $L = 1.80$ | |
+| Buy route crossover | $L = 1.50$ | Exactly oracle spot |
+| Buy route outer | $L = 1.20$ | Max premium, clamped at $+200$ bps |
+| Route inner spreads | $\pm 50$ bps | The pool profits while it barely needs the flow |
+| `MAX_SELL_BPS` | $1500$ | 15% of vault per route fill, or of reserve per AMM sell. In-kind peels are uncapped — they touch no book. |
+| Collateral | ETH | wstETH later would be native yield $\to$ unminted HFyc |
+| Cash | USDG | Marked at USDG/USD |
+
+## Fees
+
+| Parameter | 2x | 1x |
+|---|---|---|
+| Total trade fee | 125 bps | 125 bps |
+| Creator | 30 | 30 |
+| Protocol | 45 | 95 |
+| HFyc holders | 50 | 0 |
+| Pairing | 50 bps of $\mathrm{take}$ | — |
+| Redeem | 10 bps unminted | 10 bps |
+| Swap minOut | 99% of oracle | 99% of oracle |
+
+1x pays 30 / 95 / 0: it never rents senior, so its tape does not lift the Earn Pool.
+
+## Occupancy
+
+| Parameter | Value |
+|---|---|
+| $r_0$ | 2% APR |
+| $r_1$ | 8% (so 10% at $U^\star$) |
+| $r_2$ | 60% (so 70% at $U = 1$) |
+| $U^\star$ | 80% |
+| Off | $L \ge 2.5$ or unpaired |
+
+The rate prices scarcity rather than being a constant: 10% APR is what a healthily-utilised book pays.
+
+## Curve / launch
+
+| Parameter | Value |
+|---|---|
+| Meme supply | $1{,}000{,}000{,}000$ |
+| Curve sellable | $800{,}000{,}000$ |
+| AMM seed tokens | $200{,}000{,}000$ |
+| $m$ | $4/3$ |
+| Headline raise | $6.9$ ETH |
+| `MIN_RAISE_ETH` | $0.1$ ETH |
+| Per-launch cap | None — scarcity is priced via $r(U)$ instead |
+
+## Oracle
+
+| Parameter | Value |
+|---|---|
+| Confidence | $\le 2\%$ of $P$ |
+| Age | $\le 25$ h — the Robinhood ETH/USD heartbeat is 24 h, plus an hour of slack |
+
+## Leverage surcharge
+
+Charged on top of the flat 125 bps, and paid into the AMM reserve as cushion rather than to any fee
+stream.
+
+| Parameter | Value |
+|---|---|
+| At target | 0 |
+| At an edge ($L = 1.5$ or $2.5$) | 250 bps |
+| Cover surcharge max | 400 bps at $\mathrm{CR}_{\mathrm{global}} \le 1$, exits only |
+| Comfort CR | $1.5$ |
+| All-in ceiling | 700 bps |
+
+## Other
+
+| Parameter | Value |
+|---|---|
+| Volume window | 1 day, exponential decay + same-wallet reverse wipe |
+| Occupancy cursor | 32 pools per redeem / `accruePools` |
+| Protocol / creator HFyc lock | **None** (retired) |
+| `CALM_REDEEM_CR` | $1.2$ (UI warning; not an on-chain gate) |
+| Clone | EIP-1167, factory `implementation` immutable |

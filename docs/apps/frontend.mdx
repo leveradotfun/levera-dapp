@@ -1,0 +1,49 @@
+---
+title: Public launchpad
+description: Next app on :3002 — create, trade, HFyc, analytics.
+icon: layout-dashboard
+---
+
+`frontend/` is the public site (`npm run dev` $\to$ port **3002**).
+
+## Surfaces
+
+| Route | What it is |
+|---|---|
+| `/` | Explore: coin list, grid/table toggle, All / New / Leveraged / Graduated filters |
+| `/create` | Permissionless `createLaunch`. 1x vs 2x. Creator fee ETH vs HFyc (2x only). |
+| `/coin/:address` | Curve or AMM trade, vault vs reserve, leverage band, trades including Rebalance |
+| `/hfyc` | NAV, utilisation, occupancy APR (labelled as such), 24h/7d APY, durability |
+| `/analytics` | Book-wide tape, fee mix |
+| `/profile` | Positions, referrals |
+
+Grid vs table (`VIEW_KEY`) and the explore filter (`FILTER_KEY`) persist in `appState`. Trades filter (`launchpad-frontend:trades-filter`) survives refresh — do not `setTrades([])` on `refreshKey` or the Rebalance filter is lost.
+
+## Create
+
+- Raise is ETH, default 6.9, floor 0.1.
+- **2x** checkbox is the `leverageEnabled` immutable.
+- **Creator fees in HFyc** is disabled unless 2x. Factory reverts `"1x eth fees"` otherwise.
+- Copy must say 1x is 30 / 95 / 0 and 2x is 30 / 45 / 50.
+
+## Coin page
+
+- Circulating market cap, not `totalSupply()`.
+- Vault labelled **not dumpable**. Reserve is the AMM.
+- Rebalance rows: Delever −ETH, Relever +ETH, Peel −ETH, from `Protected` / `Relevered` / `SeniorReleased`.
+- 2x honesty copy from [Product](/protocol/product).
+
+## `/hfyc`
+
+Records NAV every 5 minutes in `localStorage` under `hfyc-nav:` plus the factory address. Trailing APY:
+
+$$
+r_{\mathrm{window}} = \frac{\mathrm{NAV}_1}{\mathrm{NAV}_0} - 1, \qquad
+\mathrm{APR}_{\mathrm{simple}} = \frac{r_{\mathrm{window}}}{\Delta t / 365.25\mathrm{d}}
+$$
+
+Printed only when the factory has $\ge 90\%$ of the window in samples. Wipe/redeploy starts a new series.
+
+Durability: in-band 2x count, stretched ($L \ge 2.5$), slack ($L \le 1.5$), unharvested fee ETH, occupancy settled vs pending, cash yield, $\mathrm{CR}_{\mathrm{global}}$.
+
+Pending occupancy is shown and **must not** be folded into redeemable NAV.

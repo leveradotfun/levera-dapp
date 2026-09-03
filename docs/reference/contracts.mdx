@@ -1,0 +1,45 @@
+---
+title: Contracts
+description: Surface area of the live Solidity.
+icon: file-code
+---
+
+Not in this design: a lending-pool facade, flash-loan build/recall, 80% LTV, 3x blended leverage, or a self-hosted NAV AMM as the only market.
+
+Keep: isolated clones, oracle conf/staleness, fee accrue-not-push, factory param guards, swap minOut, "no buyback with holder collateral."
+
+## Layout
+
+| Contract | Role |
+|---|---|
+| `Launch` | Clone impl. Curve, graduate, pair, AMM router, rebalance routes, reserve correction, in-kind peels, occupancy index, fee split, harvest. |
+| `LaunchpadFactory` | EIP-1167 `clone` + `initialize` + `hfyc.registerPool`. Immutable implementation. |
+| `HFyc` | ERC-20 senior. Mint against USDG/ETH, redeem/peel, `depositYield`, `feeMint`, `accrueFunding`, pause. |
+| `MemePair` | TOKEN/WETH $xy=k$. 2x prices off `juniorEth`, pays from `reserveEth`. |
+| `OracleLib` | Fail-closed $P$. |
+| `ChainlinkPriceOracle` | ETH/USD + USDG/USD. |
+| `OracleSwapRouter` | Oracle-priced inventory venue for fork/prototype. |
+| `ISwapRouter` | Live-path interface. **Not** `MockSwapRouter`. |
+| `Robinhood` | Canonical 4663 addresses. |
+
+## Launch public surface (selected)
+
+`buy`, `sell`, `buyOnPool`, `sellOnPool`, `fillSellRoute`, `fillBuyRoute`, `rebalanceToReserve`, `protect` (orphans only), `harvest`, `claimCreatorFees`, `accrueFunding`, `reallocateFrom`, `releaseForRedeem`, `releaseToAllocator`, `releaseToPool`, `releaseProRata`, `acceptSeniorInKind`. Views: `leverageWad`, `crWad`, `memeNAV`, `tvlUsd`, `juniorEth`, `seniorStats`, `seniorClaimEth`, `seniorCoverageWad`, `reserveCoverWad`, `seniorGapUsd`, `seniorExcessUsd`, `sellRouteQuote`, `buyRouteQuote`, `tradeFeeBps`, `recentVolumeUsd`, `collateralPrice`.
+
+## HFyc public surface (selected)
+
+`mintWithUsdg`, `mintWithEth`, `redeem`, `redeemInKind`, `emergencyRedeem`, `netSeniorBetween`, `depositYield`, `feeMint`, `accrueFunding`, `accruePools`, `checkpointYield`, `lendIdle`, `moveSeniorToIdle`, `receiveSeniorInKind`, `sweepOrphaned`, `registerPool` (factory), `pause` / `unpause`, two-step owner. Views: `nav`, `globalCr`, `utilizationWad`, `fundingRateWad`, `ethDropToImpairmentWad`, `oracleLive`, `earnPoolApyWad`, `earnPoolWindow`, `earnPoolYieldMixWad`, `totalYieldUsd`.
+
+## Tests to run after Launch.sol changes
+
+```bash
+forge build --sizes
+forge test --match-contract 'LaunchTest|LaunchpadFactoryTest'
+python3 extract-abis.py
+```
+
+Invariant suite: `contracts/test/Invariants.t.sol` (exclude with `--nmt invariant` for the fast loop).
+
+## Fee-lockup ABI
+
+`protocolLockupDays`, `creatorLockupDays`, `lockups` remain so existing deployments still decode. They do **not** restrict transfers or redemptions.

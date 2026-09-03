@@ -1,0 +1,44 @@
+---
+title: Pause
+description: Guardian pauses. Owner unpauses. Redeem stays open.
+icon: pause
+---
+
+Earn Pool `paused` is the book-wide switch. Launch `_live()` reverts `Paused()` on paths that attach risk or settle the senior.
+
+## What stops
+
+- Mint (`mintWithUsdg`, `mintWithEth`)
+- Pairing (`lendIdle` / `_tryPair`)
+- the route fills, `harvest()`, `reallocateFrom`
+- Factory `createLaunch`
+
+The buy route is gated by paused `lendIdle`; the sell route is not, so de-risking keeps working while paused.
+
+## What stays up
+
+- Curve buys/sells
+- AMM buys/sells
+- HFyc redeem (so holders can exit)
+- `claimCreatorFees`
+
+Peels that need a live `protect()` fail while paused if idle is short.
+
+## Unwinding a pause
+
+<Steps>
+  <Step title="Pause">
+    Guardian (or owner) calls `pause()`. Event `Paused`.
+  </Step>
+  <Step title="Diagnose">
+    Oracle/venue. Do not unpause into a bad feed.
+  </Step>
+  <Step title="Unpause">
+    Owner calls `unpause()` after the feed/venue is honest. Guardian cannot unpause.
+  </Step>
+  <Step title="Catch up">
+    Keepers `accruePools` + `harvest` + `protect` / `tryPair` as needed.
+  </Step>
+</Steps>
+
+Custom error `Paused()` (not a string) to save Launch bytecode.

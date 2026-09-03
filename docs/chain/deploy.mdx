@@ -1,0 +1,45 @@
+---
+title: Deploy
+description: Fork deploy is wired. Testnet is a different script and a different feed set.
+icon: rocket
+---
+
+## Local fork (supported)
+
+Console **Deploy** (`ui/`) broadcasts the fork script against `127.0.0.1:8545`:
+
+- `Launch` implementation
+- `HFyc`
+- `LaunchpadFactory` (implementation immutable)
+- `ChainlinkPriceOracle` or `MockPriceOracle` depending on the script
+- Mock USDG / Mock WETH (18-dec, mintable)
+- `OracleSwapRouter` (inventory-minted, oracle-priced)
+
+Writes `data/deployment.json`. Frontend/ui refuse a factory whose implementation they do not know.
+
+After contract changes:
+
+```bash
+forge build && python3 extract-abis.py && python3 audit-app-calls.py
+```
+
+## What must be true of any deploy
+
+- Factory `createLaunch` is permissionless; clones initialize in the same transaction.
+- `registerPool` is factory-only. Compromised owner used to be a one-tx drain via `registerPool`; that path is gone.
+- Two-step HFyc ownership (`pendingOwner`).
+- Guardian $\ne$ owner in production.
+- `ISwapRouter` in Launch/EarnPool — never `MockSwapRouter` on a live path. Mock is Ownable and can skew; `SWAP_TOLERANCE` then bricks rather than steals, but an owner who can skew still halts the book.
+- Production owner: multisig + timelock.
+
+## EIP-170 check
+
+```bash
+forge build --sizes
+```
+
+`Launch` must stay $\le 24{,}576$ bytes. See [Clones](/mechanics/clones).
+
+## Testnet / mainnet
+
+Not a copy-paste of the fork script. Blockers and the mock-prototype path are on [Testnet](/security/testnet).

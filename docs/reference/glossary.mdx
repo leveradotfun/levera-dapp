@@ -1,0 +1,53 @@
+---
+title: Glossary
+description: Words this repo uses on purpose.
+icon: book-a
+---
+
+<AccordionGroup>
+  <Accordion title="HFyc">
+    Hood Frenzy Yield Coin. Dollar-senior ERC-20. Issued at $\$1$ NAV. Not a stablecoin. Not a peg.
+  </Accordion>
+  <Accordion title="Junior / memeNAV">
+    $J_i = \max(\mathrm{TVL}_i - S_i, 0)$. Residual claim on pool $i$. The memecoin is this claim, 1B fixed supply.
+  </Accordion>
+  <Accordion title="Senior">
+    $S_i$. USD of HFyc liability attached to pool $i$. Occupancy accrues onto it. Protect peels it into idle USDG.
+  </Accordion>
+  <Accordion title="Idle USDG">
+    Cash outside any pool. Deposits land here (collateral is sold on arrival), and so does the cash from a filled sell route. Pairing and the buy route spend it. Collateral peeled in kind lands in `idleWeth` beside it.
+  </Accordion>
+  <Accordion title="vaultEth vs reserveEth">
+    Vault is HFyc loop collateral — prices 2x $k$, not dumpable by meme sellers. Reserve is the AMM book — 15% per swap.
+  </Accordion>
+  <Accordion title="Occupancy / funding APR">
+    $r(U)$. What 2x coins pay on attached senior. Timestamp index. Off at $L \ge 2.5$. **Not** holder APY.
+  </Accordion>
+  <Accordion title="Pairing fee">
+    50 bps of dollars actually attached, paid from vault ETH, unminted into HFyc. Dominant yield in short sessions.
+  </Accordion>
+  <Accordion title="Harvest">
+    Permissionless settlement of booked fee ETH to USDG. Holder slice $\to$ `depositYield`. Protocol/creator-in-HFyc $\to$ `feeMint`.
+  </Accordion>
+  <Accordion title="Protect / Delever">
+    At $L \ge 2.5$, sell vault ETH, move that many USD of senior to idle. Mandatory, permissionless.
+  </Accordion>
+  <Accordion title="Relever">
+    At $L \le 1.5$, optional. Spend idle USDG, buy vault ETH, senior up. Never mint new HFyc to chase a moon.
+  </Accordion>
+  <Accordion title="Peel">
+    Redeem-time or reallocation sale of up to 15% of a quiet 2x vault. Lowers that coin's $L$. Does not dump the AMM.
+  </Accordion>
+  <Accordion title="1x vs 2x">
+    Immutable at create. 1x never pulls HFyc; fees 30/95/0; creator ETH only. 2x rents senior; fees 30/45/50; creator ETH or HFyc.
+  </Accordion>
+  <Accordion title="Gap risk">
+    A −50% ETH print at 2x wipes junior with no path of 2.5x triggers. First-loss on HFyc after that. Named.
+  </Accordion>
+  <Accordion title="Pending occupancy">
+    Client-computed rent since `lastAccrued`. Informational. Not redeemable NAV. Redeem settles on-chain first.
+  </Accordion>
+  <Accordion title="Clone">
+    EIP-1167 minimal proxy of `Launch`. Not upgradeable. New bytecode $\Rightarrow$ new factory.
+  </Accordion>
+</AccordionGroup>
