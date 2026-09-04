@@ -79,11 +79,30 @@ export async function requireChain(provider, expected = TESTNET_CHAIN_ID) {
 }
 
 /// Loads a foundry artifact compiled from contracts/src. Run `forge build` in contracts/ first.
+///
+/// Two sources, in order:
+///   1. `contracts/out/<name>.sol/<name>.json` — full Forge output (abi + bytecode). Present on
+///      the laptop, where deploys happen.
+///   2. `testnet/artifacts/<name>.abi.json` — a COMMITTED ABI-only bundle (regenerate with
+///      `node make-abi-bundle.mjs` after any contract change). This is what lets the keeper run
+///      on a host that has never run Forge — the Render worker — which clones the repo but does
+///      not compile contracts. Bytecode is intentionally absent from the bundle; anything that
+///      needs to CREATE a contract must run from a checkout with the Forge build.
 export function artifact(name) {
-  const p = path.join(repoRoot, "contracts", "out", `${name}.sol`, `${name}.json`);
-  const a = JSON.parse(fs.readFileSync(p, "utf8"));
-  if (!a.bytecode || a.bytecode === "0x") throw new Error(`${name} has no bytecode — run \`forge build\` in contracts/`);
-  return { abi: a.abi, bytecode: a.bytecode };
+  const forgePath = path.join(repoRoot, "contracts", "out", `${name}.sol`, `${name}.json`);
+  if (fs.existsSync(forgePath)) {
+    const a = JSON.parse(fs.readFileSync(forgePath, "utf8"));
+    if (!a.bytecode || a.bytecode === "0x") throw new Error(`${name} has no bytecode — run \`forge build\` in contracts/`);
+    return { abi: a.abi, bytecode: a.bytecode };
+  }
+  const bundledPath = path.join(testnetRoot, "artifacts", `${name}.abi.json`);
+  if (fs.existsSync(bundledPath)) {
+    return { abi: JSON.parse(fs.readFileSync(bundledPath, "utf8")), bytecode: undefined };
+  }
+  throw new Error(
+    `${name}: no Forge artifact at contracts/out and no bundled ABI at testnet/artifacts. ` +
+      "Run `forge build` in contracts/ (laptop) or `node make-abi-bundle.mjs` (ship the bundle).",
+  );
 }
 
 /// Fills Foundry's `__$<hash>$__` library link placeholders with deployed library addresses.

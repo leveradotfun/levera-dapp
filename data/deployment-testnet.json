@@ -40,11 +40,11 @@
     "usdgUsd": "1.00007",
     "cbbtcUsd": "79551.98137852"
   },
-  "seededAt": "2026-09-04T21:50:49.760Z",
-  "updatedAt": 1788558649766,
+  "seededAt": "2026-09-04T22:11:47.121Z",
+  "updatedAt": 1788559907131,
   "seededSources": {
-    "ethUsd": "live (22823s old)",
-    "usdgUsd": "live (22831s old)",
-    "cbbtcUsd": "live (19001s old)"
+    "ethUsd": "live (24082s old)",
+    "usdgUsd": "live (24089s old)",
+    "cbbtcUsd": "live (20259s old)"
   }
 }

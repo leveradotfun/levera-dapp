@@ -30,6 +30,7 @@ import {
   sendTx,
 } from "./lib/chain.mjs";
 import { readFileSync } from "node:fs";
+import { spawn } from "node:child_process";
 
 loadEnvFile();
 
@@ -212,7 +213,57 @@ async function main() {
   log("Keeper tick done.");
 }
 
-main().catch((e) => {
-  console.error("Keeper tick failed:", e?.message || e);
-  process.exitCode = 1;
-});
+// ---------------------------------------------------------------------------
+// HOW IT RUNS
+//
+// Default (no env): ONE tick, then exit — the launchd/cron shape ("run me every 60s").
+//
+// KEEPER_INTERVAL_SECONDS=60 (the Render shape): a long-running worker that ticks forever.
+// A persistent loop beats cron-on-a-worker here: no cold start per tick, the nonce manager
+// stays warm, and Render restarts the process if it ever crashes. Ticks are sequential by
+// design (one deployer key, see the nonce-race note above), so there is nothing to gain from
+// overlapping them.
+//
+// PRICE_REFRESH_SECONDS=1800 additionally re-seeds the mock oracles from the real mainnet
+// feeds on that cadence, by spawning refresh-prices.mjs as a child process (it is a script
+// with its own main(), not an importable module). A tick that overlaps a price refresh is
+// harmless: the keeper's next read simply sees the newer mark.
+// ---------------------------------------------------------------------------
+const TICK_SECONDS = Number(process.env.KEEPER_INTERVAL_SECONDS ?? "0");
+const PRICE_REFRESH_SECONDS = Number(process.env.PRICE_REFRESH_SECONDS ?? "0");
+
+function runRefreshPrices() {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, ["refresh-prices.mjs"], { stdio: "inherit" });
+    child.on("exit", (code) => resolve(code));
+    child.on("error", () => resolve(-1));
+  });
+}
+
+if (TICK_SECONDS > 0) {
+  log(
+    `long-running mode: tick every ${TICK_SECONDS}s` +
+      (PRICE_REFRESH_SECONDS > 0 ? `, prices every ${PRICE_REFRESH_SECONDS}s` : ""),
+  );
+  let lastRefresh = 0;
+  for (;;) {
+    try {
+      await main();
+    } catch (e) {
+      console.error("Keeper tick failed:", e?.message || e);
+    }
+    const now = Date.now();
+    if (PRICE_REFRESH_SECONDS > 0 && now - lastRefresh >= PRICE_REFRESH_SECONDS * 1000) {
+      lastRefresh = now;
+      log("refreshing oracle prices from the mainnet feeds...");
+      const code = await runRefreshPrices();
+      if (code !== 0) log(`refresh-prices exited ${code}`);
+    }
+    await new Promise((r) => setTimeout(r, TICK_SECONDS * 1000));
+  }
+} else {
+  main().catch((e) => {
+    console.error("Keeper tick failed:", e?.message || e);
+    process.exitCode = 1;
+  });
+}

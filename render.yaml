@@ -1,0 +1,37 @@
+# Render blueprint for the Levera testnet keeper.
+#
+# Deploy: Render dashboard -> New -> Blueprint -> point at this repo. Render reads this file
+# and creates the worker. `sync: false` vars are prompted once at creation and stored as
+# dashboard secrets — they never live in the repo.
+#
+# The worker runs `testnet/keeper.mjs` in its long-running mode (KEEPER_INTERVAL_SECONDS set):
+# harvest fees, graduate sold-out curves, pair idle LYC into 2x gaps, fill rebalance routes,
+# settle occupancy — and every PRICE_REFRESH_SECONDS it re-seeds the mock oracles from the real
+# mainnet Chainlink feeds (refresh-prices.mjs), so the book keeps tracking the market.
+#
+# Requires the repo's committed artifacts to be enough on their own (they are):
+#   data/deployment-testnet.json   - deployed addresses
+#   testnet/artifacts/*.abi.json   - ABI bundle (regenerate after contract changes:
+#                                    `cd contracts && forge build && cd ../testnet && node make-abi-bundle.mjs`)
+# No Forge, no contracts/out, no testnet/.env on the worker.
+services:
+  - type: worker
+    name: levera-keeper
+    runtime: node
+    plan: starter
+    rootDir: testnet
+    buildCommand: npm ci
+    startCommand: node keeper.mjs
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: KEEPER_INTERVAL_SECONDS
+        value: "60"
+      - key: PRICE_REFRESH_SECONDS
+        value: "1800"
+      - key: DEPLOYER_PRIVATE_KEY
+        sync: false
+      - key: TESTNET_RPC_URL
+        sync: false
+      - key: MAINNET_RPC_URL
+        sync: false

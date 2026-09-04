@@ -125,8 +125,45 @@ Setting that to the testnet RPC switches everything together — the ethers prov
 
 `data/deployment.json` (fork) and `data/deployment-testnet.json` (testnet) share a shape, with the testnet file adding `network`, `chainId`, `explorer`, the two mock-oracle addresses (`oracleEth`, `oracleCbbtc` — needed by `refresh-prices.mjs`) and the `seededPrices` record. Re-running `deploy.mjs` overwrites the file; the apps pick the new deployment up by `updatedAt` automatically.
 
-## Not solved here
+## Running the keeper on Render (always-on)
 
-- **Keepers**: graduation/rebalance automation still dies with the browser tab. Run them from a funded process (see `docs/security/testnet.mdx`).
+`keeper.mjs` runs two ways:
+
+- **One tick then exit** (default) — the launchd shape: `node keeper.mjs` from cron every 60s.
+- **Long-running loop** — set `KEEPER_INTERVAL_SECONDS` and it ticks forever. This is the
+  Render shape: a Background Worker with no cold start per tick, restarted automatically if it
+  crashes. `PRICE_REFRESH_SECONDS` additionally re-seeds the mock oracles from the real mainnet
+  feeds on that cadence (refresh-prices.mjs is spawned as a child process).
+
+The worker is self-contained: the deployed addresses come from the committed
+`data/deployment-testnet.json` and the contract ABIs from the committed
+`testnet/artifacts/*.abi.json` bundle (regenerate after any contract change with
+`node make-abi-bundle.mjs` and commit). No Forge, no `contracts/out`, no `testnet/.env` —
+everything sensitive arrives as Render environment variables (`DEPLOYER_PRIVATE_KEY`,
+`TESTNET_RPC_URL`, `MAINNET_RPC_URL`), which `loadEnvFile` never overrides.
+
+Deploy it:
+
+1. Push this repo to GitHub.
+2. Render dashboard → **New → Blueprint** — `render.yaml` at the repo root defines a
+   `levera-keeper` Background Worker (root dir `testnet`, `npm ci`, `node keeper.mjs`).
+3. Fill the three prompted secrets (`DEPLOYER_PRIVATE_KEY`, `TESTNET_RPC_URL`,
+   `MAINNET_RPC_URL`). Same values as `testnet/.env` — the key is the hot testnet deployer,
+   so keep Render's env encryption and do not reuse a mainnet key here.
+4. First deploy: watch the logs for `long-running mode: tick every 60s` then `Keeper tick done`.
+
+Operational notes:
+
+- **Exactly one keeper per deployment.** If Render runs it, unload the local launchd job
+  (`launchctl bootout gui/$UID ~/Library/LaunchAgents/com.levera.*.plist`) — two processes
+  signing with one key is the nonce-race this harness has been bitten by before.
+- The local admin console's keeper card tails `testnet/keeper.log`, which only the local
+  launchd job writes. With the keeper on Render, read the ticks from Render's log dashboard
+  instead (or keep launchd running locally and skip Render entirely — but not both).
+- Cheaper alternative: a Render **Cron Job** on `*/1 * * * *` running the default single-tick
+  mode (`startCommand: node keeper.mjs` with no `KEEPER_INTERVAL_SECONDS`). Same image, billed
+  per second of runtime rather than a flat plan.
+
+## Not solved here
 - **Real cbBTC**: when Coinbase deploys an official token on Robinhood Chain, redeploy the cbBTC launchpad against it — the launchpad takes the token address at construction, so that is one constructor argument, not a migration.
 - **Mainnet**: still a manual, reviewed process. The 6-decimal USDG on mainnet is a real code path the mocks never exercise.
