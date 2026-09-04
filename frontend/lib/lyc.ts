@@ -217,7 +217,10 @@ export async function mintWithEth(addresses: DeployedAddresses, ethAmount: bigin
     const ethPrice = await fetchCollateralPriceUsd(addresses.oracle);
     const usdValue = (ethAmount * ethPrice) / WAD;
     const sharesMinted = quoteMint(g, usdValue);
-    const receipt = await (await sendReplacing(address, (o) => h.mintWithEth({ value: ethAmount, ...o }), 2_000_000n)).wait();
+    // Explicit overload pin for the same reason as mintWithCollateral above: mintWithEth has a
+    // () and an (address) shape, and the explicit () form keeps the overrides-only call
+    // unambiguous no matter how the resolver weighs the object.
+    const receipt = await (await sendReplacing(address, (o) => h.getFunction("mintWithEth()")({ value: ethAmount, ...o }), 2_000_000n)).wait();
     const { logLycMint } = await import("./sessionLog");
     logLycMint({
       shares: sharesMinted.toString(),
@@ -256,7 +259,19 @@ export async function mintWithCollateral(
     const decimalLift = 10n ** BigInt(18 - decimals);
     const usdValue = (amount * decimalLift * tokenUsdPriceWad) / WAD;
     const sharesMinted = quoteMint(g, usdValue);
-    const receipt = await (await sendReplacing(address, (o) => h.mintWithCollateral(token, amount, o), 2_000_000n)).wait();
+    // Pin the explicit overload: the full EarnPool ABI carries BOTH mintWithCollateral shapes
+    // — (address,uint256) and (address,uint256,address pairPool) — and ethers v6's resolver
+    // throws "ambiguous function description" when an overrides object rides along with an
+    // overloaded call unless the signature is spelled out. The earn page means a PLAIN deposit
+    // (no eager-pair pool), which is the 2-arg shape: on-chain that passes pairPool = address(0),
+    // and the contract skips the eager-pair path on its own.
+    const receipt = await (
+      await sendReplacing(
+        address,
+        (o) => h.getFunction("mintWithCollateral(address,uint256)")(token, amount, o),
+        2_000_000n,
+      )
+    ).wait();
     const { logLycMint } = await import("./sessionLog");
     logLycMint({
       shares: sharesMinted.toString(),
