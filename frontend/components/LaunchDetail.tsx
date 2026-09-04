@@ -34,6 +34,8 @@ import { useTokenMetadata } from "@/lib/tokenMetadata";
 import { spendableEth } from "@/lib/wallet";
 import PriceLabel from "@/components/PriceLabel";
 import SwapCard from "@/components/SwapCard";
+import MobileSwapSheet from "@/components/MobileSwapSheet";
+import { useIsDesktop } from "@/lib/useMediaQuery";
 import { timeAgo } from "@/lib/utils";
 import { toastError, toastSuccess } from "@/lib/toast";
 import { TX_TIMEOUT_MS, withTimeout } from "@/lib/txTimeout";
@@ -493,10 +495,195 @@ export default function LaunchDetail({
 
   const periodChanges = computePeriodChanges(priceHistory);
 
+  const isDesktop = useIsDesktop();
+
   const h = hashOf(launch.address);
   const color = PALETTE[h % PALETTE.length];
   const emoji = EMOJI[(h >>> 3) % EMOJI.length];
   const isNew = launch.stats.createdAt !== null && Date.now() - launch.stats.createdAt < 3600000;
+
+  // The trade card and the token info panels sit in different places per breakpoint but must each
+  // exist exactly once: the swap card owns the amount input state, and LeverageBandBar polls the
+  // chain, so neither may render in two copies. On phones the card lives inside a bottom sheet
+  // (opened from a fixed bar above the nav) while the info panels stay in the page flow below the
+  // trades; on desktop both stack in the sticky right-hand column.
+  const swapContent = (
+    <>
+      <SwapCard
+        mode={side}
+        onModeChange={(m) => { setSide(m); setAmount(quoteSymbol === "cbBTC" ? "0.01" : "0.5"); }}
+        buyLabel="Buy" sellLabel="Sell"
+        inputToken={{
+          symbol: side === "buy" ? paySymbol : launch.symbol,
+          balance: side === "buy" ? buyMax : tokenBalance,
+          decimals: side === "buy" ? (payToken === "USDG" ? 18 : quoteDecimals) : 18,
+        }}
+        outputToken={{ symbol: side === "buy" ? launch.symbol : quoteSymbol, balance: 0n }}
+        inputTokenOptions={
+          side === "buy"
+            ? [
+                { key: "ETH", symbol: quoteSymbol },
+                ...(wrapsNative ? [{ key: "WETH", symbol: "WETH" }] : []),
+                { key: "USDG", symbol: "USDG" },
+              ]
+            : undefined
+        }
+        onInputTokenChange={side === "buy" ? (v) => { setPayToken(v as typeof payToken); setAmount(""); } : undefined}
+        value={amount} onValueChange={(v) => refreshQuote(v)}
+        quoteLabel={quote !== null ? (side === "buy" ? formatWad(quote, 0) : fmtQuote(quote, quotePlaces)) : "…"}
+        inputUsdLabel={inputUsdLabel}
+        outputUsdLabel={outputUsdLabel}
+        slippage={(slippageBps / 100).toFixed(1)} slippageOptions={[50, 100, 300]} onSlippageChange={setSlippageBps} slippageBps={slippageBps}
+        busy={busy} disabled={!addresses} isConnected={!!wallet.isConnected} connectLabel="Connect wallet to trade"
+        buyButtonLabel={`Buy ${launch.symbol}`} sellButtonLabel={`Sell ${launch.symbol}`}
+        onMax={() => {
+          const max = side === "buy" ? buyMax : tokenBalance;
+          const dec = side === "sell" ? 18 : payToken === "USDG" ? 18 : quoteDecimals;
+          const raw = ethers.formatUnits(max, dec);
+          const [ip, dp] = raw.split(".");
+          const trimmed = dp ? `${ip}.${dp.slice(0, 4)}` : ip;
+          refreshQuote(trimmed);
+        }}
+        onBuy={submit} onSell={submit}
+      />
+
+      {amount && quote !== null && (
+        <div className="rounded-lg border border-border bg-surface p-3 space-y-1.5">
+          <div className="flex justify-between text-xs">
+            <span className="text-muted">Slippage tolerance</span>
+            <span className="font-mono text-foreground">{(slippageBps / 100).toFixed(2)}%</span>
+          </div>
+          {priceImpact !== null && (
+            <div className="flex justify-between text-xs">
+              <span className="text-muted">Price impact</span>
+              <span className={`font-mono ${priceImpact < -0.5 ? "text-red" : priceImpact > 0.5 ? "text-green" : "text-muted"}`}>
+                {priceImpact > 0 ? "+" : ""}
+                {priceImpact.toFixed(2)}%
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Presets — directly under swap card, above Stats/Audit */}
+      {side === "buy" && (
+        <div className="grid grid-cols-3 gap-2">
+          {(payToken === "USDG"
+            ? ["100", "500", "1000"]
+            : quoteSymbol === "cbBTC"
+              ? ["0.001", "0.005", "0.01"]
+              : ["0.1", "0.5", "1"]
+          ).map((amt) => (
+            <button key={amt} type="button" onClick={() => refreshQuote(amt)}
+              className="rounded-lg border border-border bg-surface py-2 text-sm font-medium text-foreground hover:border-accent transition-colors">
+              {amt} {paySymbol}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="grid grid-cols-3 gap-2">
+        {["25%", "50%", "100%"].map((pct) => (
+          <button key={pct} type="button"
+            onClick={() => { const max = side === "buy" ? buyMax : tokenBalance; refreshQuote(ethers.formatUnits((max * BigInt(parseInt(pct))) / 100n, side === "sell" ? 18 : payToken === "USDG" ? 18 : quoteDecimals)); }}
+            className="rounded-lg border border-border bg-surface py-2 text-sm font-medium text-foreground hover:border-accent transition-colors">
+            {pct}
+          </button>
+        ))}
+      </div>
+
+      <p className="text-[11px] text-muted text-center">
+        1.00% fee — 0.50% creator, up to 0.05% to LYC (scaled by how paired this pool is),
+        the rest to protocol.
+      </p>
+    </>
+  );
+
+  const infoContent = (
+    <>
+      {/* Token Data */}
+      {(() => {
+        const since = Date.now() - 86_400_000;
+        const inWindow = trades.filter((t) => t.timestamp >= since && t.type !== "rebalance");
+        const buys = inWindow.filter((t) => t.type === "buy");
+        const sells = inWindow.filter((t) => t.type === "sell");
+        const buyVol = buys.reduce((sum, t) => sum + t.amountUsd, 0);
+        const sellVol = sells.reduce((sum, t) => sum + t.amountUsd, 0);
+        const totalVol = buyVol + sellVol;
+        const buyPct = totalVol > 0 ? (buyVol / totalVol) * 100 : 50;
+        return (
+          <div className="rounded-xl border border-border bg-card p-3 space-y-2.5">
+            <div className="text-[10px] uppercase tracking-wider text-muted font-semibold">Token Data</div>
+            <div className="grid grid-cols-2 gap-1.5">
+              <div className="rounded-lg bg-surface px-2.5 py-2">
+                <div className="text-base font-bold text-foreground leading-tight">{holderCount ?? "…"}</div>
+                <div className="text-[10px] text-muted leading-tight">Holders</div>
+              </div>
+              <div className="rounded-lg bg-surface px-2.5 py-2">
+                <div className="text-base font-bold text-foreground leading-tight truncate">{usd(liquidityUsd)}</div>
+                <div className="text-[10px] text-muted leading-tight">Liquidity</div>
+              </div>
+              <div className="rounded-lg bg-surface px-2.5 py-2">
+                <div className="text-base font-bold text-green leading-tight">{buyVol > 0 ? `${((buyVol / (buyVol + sellVol || 1)) * 100).toFixed(0)}%` : "0%"}</div>
+                <div className="text-[10px] text-muted leading-tight">Buy pressure 24h</div>
+              </div>
+              <div className="rounded-lg bg-surface px-2.5 py-2">
+                <div className="text-base font-bold text-foreground leading-tight truncate">{usdShort(totalVol)}</div>
+                <div className="text-[10px] text-muted leading-tight">Volume 24h</div>
+              </div>
+            </div>
+            <div>
+              <div className="flex justify-between text-[11px] mb-1 gap-2">
+                <span className="text-green truncate">{buys.length} buys {usdShort(buyVol)}</span>
+                <span className="text-red truncate text-right">{sells.length} sells {usdShort(sellVol)}</span>
+              </div>
+              <div className="h-1.5 w-full rounded-full bg-surface overflow-hidden flex">
+                <div className="h-full bg-green rounded-l-full" style={{ width: `${buyPct}%` }} />
+                <div className="h-full bg-red rounded-r-full" style={{ width: `${100 - buyPct}%` }} />
+              </div>
+            </div>
+            <div className="border-t border-border pt-2 space-y-1 text-[11px]">
+              <div className="flex justify-between gap-2"><span className="text-muted truncate">AMM reserve</span><span className="font-mono text-foreground truncate">{fmtQuote(launch.reserveEth, quotePlaces)} {quoteSymbol}</span></div>
+              <div className="flex justify-between gap-2"><span className="text-muted truncate">Token reserve</span><span className="font-mono text-foreground truncate">{tokenReserveAmountLabel} · {tokenReserveUsdLabel}</span></div>
+              {launch.leverageEnabled ? (
+                <>
+                  <div className="flex justify-between gap-2"><span className="text-muted truncate">LYC vault</span><span className="font-mono text-foreground truncate">{fmtQuote(launch.vaultEth, quotePlaces)} {quoteSymbol}</span></div>
+                  <div className="flex justify-between gap-2"><span className="text-muted truncate">Occupancy paid</span><span className="font-mono text-foreground truncate">{usd(launch.occupancyPaidUsd)}</span></div>
+                  <div className="flex justify-between gap-2"><span className="text-muted truncate">Pairing fees</span><span className="font-mono text-foreground truncate">{usd(launch.pairingFeesPaidUsd)}</span></div>
+                </>
+              ) : null}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Bonding curve / Leverage */}
+      {!launch.graduated ? (
+        <div className="rounded-xl border border-border bg-card p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-accent"></span>
+              <span className="text-sm font-semibold text-foreground">Bonding curve progress</span>
+            </div>
+            <span className="text-sm font-semibold text-accent">{launch.pctToGraduation.toFixed(0)}%</span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-surface mb-3">
+            <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${launch.pctToGraduation}%` }} />
+          </div>
+          <div className="space-y-1.5 text-sm">
+            <div className="flex justify-between"><span className="text-muted">To graduate</span><span className="font-semibold text-foreground">MC {usdCompact(launch.targetUsd)}</span></div>
+            <div className="flex justify-between"><span className="text-muted">Amount required</span><span className="font-semibold text-foreground">{fmtQuote(launch.targetCollateral - launch.raisedCollateral, quotePlaces)} {quoteSymbol}<span className="text-muted ml-1">({usdCompact(launch.targetUsd - launch.raisedUsd)})</span></span></div>
+          </div>
+          <div className="mt-3 flex items-center gap-2 text-xs text-muted">
+            <svg className="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+            <span>Graduates at 100%.</span>
+          </div>
+        </div>
+      ) : (
+        <LeverageBandBar launchAddress={launch.address} />
+      )}
+    </>
+  );
 
   return (
     <div className="space-y-4">
@@ -505,8 +692,8 @@ export default function LaunchDetail({
       </button>
 
       {/* ── Full-width token header ── */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-4">
           {meta?.imageUrl ? (
             <img
               src={meta.imageUrl}
@@ -522,7 +709,7 @@ export default function LaunchDetail({
               {emoji}
             </div>
           )}
-          <div>
+          <div className="min-w-0">
             <h1 className="text-2xl font-bold text-foreground">${launch.symbol}</h1>
             <div className="text-sm text-muted">{launch.name}</div>
             <div className="flex items-center gap-2 mt-0.5 text-xs text-muted">
@@ -562,7 +749,7 @@ export default function LaunchDetail({
             )}
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 sm:justify-end">
           <div className="text-right">
             <div className="text-xs text-muted">Market cap.</div>
             <div className="text-2xl font-bold text-foreground">{usdCompact(launch.marketCapUsd)}</div>
@@ -597,11 +784,11 @@ export default function LaunchDetail({
         <div className="flex-1 min-w-0 space-y-4">
           {/* Chart */}
           <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xl font-bold text-foreground">
                 <PriceLabel value={launch.priceUsd} />
               </span>
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-3">
                 {periodChanges.map((pc) => (
                   <span key={pc.label} className="text-xs text-muted-foreground">
                     {pc.label}{" "}
@@ -643,182 +830,27 @@ export default function LaunchDetail({
               )}
             </div>
           </div>
+
+          {/* Phones: token info stays in the page flow below the trades; the swap card itself
+              lives in the bottom sheet opened from the fixed trade bar. */}
+          {!isDesktop && <div className="space-y-4">{infoContent}</div>}
         </div>
 
-        {/* ── Right: swap card + stats (fixed width, sticky) ── */}
-        <div className="w-full lg:w-[380px] shrink-0">
-          <div className="lg:sticky lg:top-4 space-y-4">
-            <SwapCard
-              mode={side}
-              onModeChange={(m) => { setSide(m); setAmount(quoteSymbol === "cbBTC" ? "0.01" : "0.5"); }}
-              buyLabel="Buy" sellLabel="Sell"
-              inputToken={{
-                symbol: side === "buy" ? paySymbol : launch.symbol,
-                balance: side === "buy" ? buyMax : tokenBalance,
-                decimals: side === "buy" ? (payToken === "USDG" ? 18 : quoteDecimals) : 18,
-              }}
-              outputToken={{ symbol: side === "buy" ? launch.symbol : quoteSymbol, balance: 0n }}
-              inputTokenOptions={
-                side === "buy"
-                  ? [
-                      { key: "ETH", symbol: quoteSymbol },
-                      ...(wrapsNative ? [{ key: "WETH", symbol: "WETH" }] : []),
-                      { key: "USDG", symbol: "USDG" },
-                    ]
-                  : undefined
-              }
-              onInputTokenChange={side === "buy" ? (v) => { setPayToken(v as typeof payToken); setAmount(""); } : undefined}
-              value={amount} onValueChange={(v) => refreshQuote(v)}
-              quoteLabel={quote !== null ? (side === "buy" ? formatWad(quote, 0) : fmtQuote(quote, quotePlaces)) : "…"}
-              inputUsdLabel={inputUsdLabel}
-              outputUsdLabel={outputUsdLabel}
-              slippage={(slippageBps / 100).toFixed(1)} slippageOptions={[50, 100, 300]} onSlippageChange={setSlippageBps} slippageBps={slippageBps}
-              busy={busy} disabled={!addresses} isConnected={!!wallet.isConnected} connectLabel="Connect wallet to trade"
-              buyButtonLabel={`Buy ${launch.symbol}`} sellButtonLabel={`Sell ${launch.symbol}`}
-              onMax={() => {
-                const max = side === "buy" ? buyMax : tokenBalance;
-                const dec = side === "sell" ? 18 : payToken === "USDG" ? 18 : quoteDecimals;
-                const raw = ethers.formatUnits(max, dec);
-                const [ip, dp] = raw.split(".");
-                const trimmed = dp ? `${ip}.${dp.slice(0, 4)}` : ip;
-                refreshQuote(trimmed);
-              }}
-              onBuy={submit} onSell={submit}
-            />
-
-            {amount && quote !== null && (
-              <div className="rounded-lg border border-border bg-surface p-3 space-y-1.5">
-                <div className="flex justify-between text-xs">
-                  <span className="text-muted">Slippage tolerance</span>
-                  <span className="font-mono text-foreground">{(slippageBps / 100).toFixed(2)}%</span>
-                </div>
-                {priceImpact !== null && (
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted">Price impact</span>
-                    <span className={`font-mono ${priceImpact < -0.5 ? "text-red" : priceImpact > 0.5 ? "text-green" : "text-muted"}`}>
-                      {priceImpact > 0 ? "+" : ""}
-                      {priceImpact.toFixed(2)}%
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Presets — directly under swap card, above Stats/Audit */}
-            {side === "buy" && (
-              <div className="grid grid-cols-3 gap-2">
-                {(payToken === "USDG"
-                  ? ["100", "500", "1000"]
-                  : quoteSymbol === "cbBTC"
-                    ? ["0.001", "0.005", "0.01"]
-                    : ["0.1", "0.5", "1"]
-                ).map((amt) => (
-                  <button key={amt} type="button" onClick={() => refreshQuote(amt)}
-                    className="rounded-lg border border-border bg-surface py-2 text-sm font-medium text-foreground hover:border-accent transition-colors">
-                    {amt} {paySymbol}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <div className="grid grid-cols-3 gap-2">
-              {["25%", "50%", "100%"].map((pct) => (
-                <button key={pct} type="button"
-                  onClick={() => { const max = side === "buy" ? buyMax : tokenBalance; refreshQuote(ethers.formatUnits((max * BigInt(parseInt(pct))) / 100n, side === "sell" ? 18 : payToken === "USDG" ? 18 : quoteDecimals)); }}
-                  className="rounded-lg border border-border bg-surface py-2 text-sm font-medium text-foreground hover:border-accent transition-colors">
-                  {pct}
-                </button>
-              ))}
+        {isDesktop ? (
+          <div className="w-[380px] shrink-0">
+            <div className="sticky top-4 space-y-4">
+              {swapContent}
+              {infoContent}
             </div>
-
-            <p className="text-[11px] text-muted text-center">
-              1.00% fee — 0.50% creator, up to 0.05% to LYC (scaled by how paired this pool is),
-              the rest to protocol.
-            </p>
-
-            {/* Token Data */}
-            {(() => {
-              const since = Date.now() - 86_400_000;
-              const inWindow = trades.filter((t) => t.timestamp >= since && t.type !== "rebalance");
-              const buys = inWindow.filter((t) => t.type === "buy");
-              const sells = inWindow.filter((t) => t.type === "sell");
-              const buyVol = buys.reduce((sum, t) => sum + t.amountUsd, 0);
-              const sellVol = sells.reduce((sum, t) => sum + t.amountUsd, 0);
-              const totalVol = buyVol + sellVol;
-              const buyPct = totalVol > 0 ? (buyVol / totalVol) * 100 : 50;
-              return (
-                <div className="rounded-xl border border-border bg-card p-3 space-y-2.5">
-                  <div className="text-[10px] uppercase tracking-wider text-muted font-semibold">Token Data</div>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <div className="rounded-lg bg-surface px-2.5 py-2">
-                      <div className="text-base font-bold text-foreground leading-tight">{holderCount ?? "…"}</div>
-                      <div className="text-[10px] text-muted leading-tight">Holders</div>
-                    </div>
-                    <div className="rounded-lg bg-surface px-2.5 py-2">
-                      <div className="text-base font-bold text-foreground leading-tight truncate">{usd(liquidityUsd)}</div>
-                      <div className="text-[10px] text-muted leading-tight">Liquidity</div>
-                    </div>
-                    <div className="rounded-lg bg-surface px-2.5 py-2">
-                      <div className="text-base font-bold text-green leading-tight">{buyVol > 0 ? `${((buyVol / (buyVol + sellVol || 1)) * 100).toFixed(0)}%` : "0%"}</div>
-                      <div className="text-[10px] text-muted leading-tight">Buy pressure 24h</div>
-                    </div>
-                    <div className="rounded-lg bg-surface px-2.5 py-2">
-                      <div className="text-base font-bold text-foreground leading-tight truncate">{usdShort(totalVol)}</div>
-                      <div className="text-[10px] text-muted leading-tight">Volume 24h</div>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-[11px] mb-1 gap-2">
-                      <span className="text-green truncate">{buys.length} buys {usdShort(buyVol)}</span>
-                      <span className="text-red truncate text-right">{sells.length} sells {usdShort(sellVol)}</span>
-                    </div>
-                    <div className="h-1.5 w-full rounded-full bg-surface overflow-hidden flex">
-                      <div className="h-full bg-green rounded-l-full" style={{ width: `${buyPct}%` }} />
-                      <div className="h-full bg-red rounded-r-full" style={{ width: `${100 - buyPct}%` }} />
-                    </div>
-                  </div>
-                  <div className="border-t border-border pt-2 space-y-1 text-[11px]">
-                    <div className="flex justify-between gap-2"><span className="text-muted truncate">AMM reserve</span><span className="font-mono text-foreground truncate">{fmtQuote(launch.reserveEth, quotePlaces)} {quoteSymbol}</span></div>
-                    <div className="flex justify-between gap-2"><span className="text-muted truncate">Token reserve</span><span className="font-mono text-foreground truncate">{tokenReserveAmountLabel} · {tokenReserveUsdLabel}</span></div>
-                    {launch.leverageEnabled ? (
-                      <>
-                        <div className="flex justify-between gap-2"><span className="text-muted truncate">LYC vault</span><span className="font-mono text-foreground truncate">{fmtQuote(launch.vaultEth, quotePlaces)} {quoteSymbol}</span></div>
-                        <div className="flex justify-between gap-2"><span className="text-muted truncate">Occupancy paid</span><span className="font-mono text-foreground truncate">{usd(launch.occupancyPaidUsd)}</span></div>
-                        <div className="flex justify-between gap-2"><span className="text-muted truncate">Pairing fees</span><span className="font-mono text-foreground truncate">{usd(launch.pairingFeesPaidUsd)}</span></div>
-                      </>
-                    ) : null}
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Bonding curve / Leverage */}
-            {!launch.graduated ? (
-              <div className="rounded-xl border border-border bg-card p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-accent"></span>
-                    <span className="text-sm font-semibold text-foreground">Bonding curve progress</span>
-                  </div>
-                  <span className="text-sm font-semibold text-accent">{launch.pctToGraduation.toFixed(0)}%</span>
-                </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-surface mb-3">
-                  <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${launch.pctToGraduation}%` }} />
-                </div>
-                <div className="space-y-1.5 text-sm">
-                  <div className="flex justify-between"><span className="text-muted">To graduate</span><span className="font-semibold text-foreground">MC {usdCompact(launch.targetUsd)}</span></div>
-                  <div className="flex justify-between"><span className="text-muted">Amount required</span><span className="font-semibold text-foreground">{fmtQuote(launch.targetCollateral - launch.raisedCollateral, quotePlaces)} {quoteSymbol}<span className="text-muted ml-1">({usdCompact(launch.targetUsd - launch.raisedUsd)})</span></span></div>
-                </div>
-                <div className="mt-3 flex items-center gap-2 text-xs text-muted">
-                  <svg className="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                  <span>Graduates at 100%.</span>
-                </div>
-              </div>
-            ) : (
-              <LeverageBandBar launchAddress={launch.address} />
-            )}
           </div>
-        </div>
+        ) : (
+          <MobileSwapSheet
+            triggerLabel={side === "buy" ? `Buy ${launch.symbol}` : `Sell ${launch.symbol}`}
+            title={`Trade $${launch.symbol}`}
+          >
+            {swapContent}
+          </MobileSwapSheet>
+        )}
       </div>
     </div>
   );

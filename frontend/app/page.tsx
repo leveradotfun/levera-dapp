@@ -54,7 +54,7 @@ export default function Home() {
       <ExploreStats launches={launches} addresses={addresses} />
 
       {/* Filter Tabs */}
-      <div className="flex items-center gap-2 mb-6">
+      <div className="mb-6 flex flex-wrap items-center gap-2 gap-y-2">
         {filters.map((f) => (
           <button
             key={f}

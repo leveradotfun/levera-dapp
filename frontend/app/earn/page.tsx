@@ -26,6 +26,8 @@ import ConnectWalletButton from "@/components/ConnectWalletButton";
 import { spendableEth } from "@/lib/wallet";
 import { formatApr, useLycMetrics, NavSample } from "@/lib/lycMetrics";
 import SwapCard from "@/components/SwapCard";
+import MobileSwapSheet from "@/components/MobileSwapSheet";
+import { useIsDesktop } from "@/lib/useMediaQuery";
 
 type Tab = "position" | "transactions";
 
@@ -51,6 +53,7 @@ export default function EarnPage() {
   const [swapMode, setSwapMode] = useState<"buy" | "sell">("buy");
   const [chartPeriod, setChartPeriod] = useState<"5m" | "1h" | "4h" | "1d" | "all">("all");
   const { apy, samples } = useLycMetrics(addresses);
+  const isDesktop = useIsDesktop();
 
   const refresh = useCallback(async () => {
     if (!addresses) return;
@@ -182,64 +185,10 @@ export default function EarnPage() {
     }
   })();
 
-  return (
-    <div className="flex flex-col gap-4 lg:flex-row">
-      {/* ── Left: chart + tabs ── */}
-      <div className="flex-1 min-w-0 space-y-4">
-        {/* Stats bar */}
-        <div className="flex items-stretch gap-0 overflow-hidden rounded-xl border border-border bg-card">
-          <StatBlock label="LYC Price" value={`$${formatWad(g?.nav ?? 0n, 4)}`}
-            badge={navReturn !== 0 ? `${navReturn >= 0 ? "+" : ""}${navReturn.toFixed(2)}%` : "+0.00%"}
-            badgeColor={navReturn >= 0 ? "text-green-400 bg-green-400/10" : "text-red-400 bg-red-400/10"} accent />
-          <div className="w-px bg-border" />
-          <StatBlock
-            label="LYC APY"
-            value={
-              apy.h24.ready && apy.h24.simpleApr !== null
-                ? formatApr(apy.h24.simpleApr)
-                : apy.all.ready && apy.all.simpleApr !== null
-                  ? `~${formatApr(apy.all.simpleApr)}`
-                  : "—"
-            }
-            badge={!apy.h24.ready && apy.all.ready ? "since launch" : undefined}
-            accent
-          />
-          <div className="w-px bg-border" />
-          <StatBlock label="Market Cap" value={marketCap >= 1e9 ? `$${(marketCap / 1e9).toFixed(2)}B` : marketCap >= 1e6 ? `$${(marketCap / 1e6).toFixed(2)}M` : `$${marketCap.toFixed(2)}`} />
-        </div>
-
-        {/* Chart period selector */}
-        <div className="flex items-center gap-1">
-          {(["5m", "1h", "4h", "1d", "all"] as const).map((p) => (
-            <button key={p} onClick={() => setChartPeriod(p)}
-              className={`px-3 py-1 text-xs font-medium rounded-lg transition-colors ${chartPeriod === p ? "bg-surface text-foreground" : "text-muted hover:text-foreground"}`}>
-              {p === "all" ? "All" : p}
-            </button>
-          ))}
-        </div>
-
-        {/* Chart */}
-        <div className="rounded-xl border border-border bg-card p-4 h-80">
-          {navSamples.length >= 2 ? <NavChart samples={navSamples} /> : (
-            <div className="flex h-full items-center justify-center text-sm text-muted">Chart fills in as NAV samples are recorded (~5 min intervals)</div>
-          )}
-        </div>
-
-        {/* Tabs */}
-        <div className="flex gap-4 border-b border-border">
-          {(["position", "transactions"] as const).map((t) => (
-            <button key={t} onClick={() => setTab(t)}
-              className={`pb-3 text-sm font-semibold capitalize transition-colors border-b-2 ${tab === t ? "border-accent text-foreground" : "border-transparent text-muted hover:text-foreground"}`}>
-              {t === "position" ? "Your Position" : "Transactions"}
-            </button>
-          ))}
-        </div>
-        {tab === "position" ? <PositionPanel pos={pos} g={g} wallet={wallet} /> : <TransactionsPanel />}
-      </div>
-
-      {/* ── Right: swap card ── */}
-      <div className="w-full lg:w-[380px] shrink-0">
-        <div className="lg:sticky lg:top-4 space-y-3">
+  // Same single-instance rule as the coin page: the card owns the amount inputs, so it is
+  // defined once and placed either in the desktop column or the mobile bottom sheet.
+  const swapContent = (
+    <>
           <SwapCard
             mode={swapMode}
             onModeChange={(m) => { setSwapMode(m); setDepositAmt(""); setRedeemAmt(""); }}
@@ -315,8 +264,79 @@ export default function EarnPage() {
               )
             }
           />
+    </>
+  );
+
+  return (
+    <div className="flex flex-col gap-4 lg:flex-row">
+      {/* ── Left: chart + tabs ── */}
+      <div className="flex-1 min-w-0 space-y-4">
+        {/* Stats bar */}
+        <div className="flex items-stretch gap-0 overflow-hidden rounded-xl border border-border bg-card">
+          <StatBlock label="LYC Price" value={`$${formatWad(g?.nav ?? 0n, 4)}`}
+            badge={navReturn !== 0 ? `${navReturn >= 0 ? "+" : ""}${navReturn.toFixed(2)}%` : "+0.00%"}
+            badgeColor={navReturn >= 0 ? "text-green-400 bg-green-400/10" : "text-red-400 bg-red-400/10"} accent />
+          <div className="w-px bg-border" />
+          <StatBlock
+            label="LYC APY"
+            value={
+              apy.h24.ready && apy.h24.simpleApr !== null
+                ? formatApr(apy.h24.simpleApr)
+                : apy.all.ready && apy.all.simpleApr !== null
+                  ? `~${formatApr(apy.all.simpleApr)}`
+                  : "—"
+            }
+            badge={!apy.h24.ready && apy.all.ready ? "since launch" : undefined}
+            accent
+          />
+          <div className="w-px bg-border" />
+          <StatBlock label="Market Cap" value={marketCap >= 1e9 ? `$${(marketCap / 1e9).toFixed(2)}B` : marketCap >= 1e6 ? `$${(marketCap / 1e6).toFixed(2)}M` : `$${marketCap.toFixed(2)}`} />
         </div>
+
+        {/* Chart period selector */}
+        <div className="flex items-center gap-1">
+          {(["5m", "1h", "4h", "1d", "all"] as const).map((p) => (
+            <button key={p} onClick={() => setChartPeriod(p)}
+              className={`px-3 py-1 text-xs font-medium rounded-lg transition-colors ${chartPeriod === p ? "bg-surface text-foreground" : "text-muted hover:text-foreground"}`}>
+              {p === "all" ? "All" : p}
+            </button>
+          ))}
+        </div>
+
+        {/* Chart */}
+        <div className="rounded-xl border border-border bg-card p-4 h-80">
+          {navSamples.length >= 2 ? <NavChart samples={navSamples} /> : (
+            <div className="flex h-full items-center justify-center text-sm text-muted">Chart fills in as NAV samples are recorded (~5 min intervals)</div>
+          )}
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-4 border-b border-border">
+          {(["position", "transactions"] as const).map((t) => (
+            <button key={t} onClick={() => setTab(t)}
+              className={`pb-3 text-sm font-semibold capitalize transition-colors border-b-2 ${tab === t ? "border-accent text-foreground" : "border-transparent text-muted hover:text-foreground"}`}>
+              {t === "position" ? "Your Position" : "Transactions"}
+            </button>
+          ))}
+        </div>
+        {tab === "position" ? <PositionPanel pos={pos} g={g} wallet={wallet} /> : <TransactionsPanel />}
       </div>
+
+      {/* ── Right: swap card — inline column on desktop, bottom sheet on phones ── */}
+      {isDesktop ? (
+        <div className="w-[380px] shrink-0">
+          <div className="sticky top-4 space-y-3">
+            {swapContent}
+          </div>
+        </div>
+      ) : (
+        <MobileSwapSheet
+          triggerLabel={swapMode === "buy" ? "Buy LYC" : "Sell LYC"}
+          title="Mint or redeem LYC"
+        >
+          {swapContent}
+        </MobileSwapSheet>
+      )}
     </div>
   );
 }
@@ -328,7 +348,7 @@ function StatBlock({ label, value, badge, badgeColor, accent }: { label: string;
         <span className="text-xs text-muted">{label}</span>
         {badge ? <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${badgeColor ?? "text-muted bg-surface"}`}>{badge}</span> : null}
       </div>
-      <div className={`mt-1 font-mono text-lg ${accent ? "text-accent" : "text-foreground"}`}>{value}</div>
+      <div className={`mt-1 font-mono text-base sm:text-lg ${accent ? "text-accent" : "text-foreground"}`}>{value}</div>
     </div>
   );
 }

@@ -10,7 +10,8 @@ type Item = { href: string; label: string; icon: React.ReactNode };
 
 const ICON = "h-[22px] w-[22px]";
 
-const ITEMS: Item[] = [
+// Shared with MobileNav, which renders the same destinations as a phone-only bottom bar.
+export const NAV_ITEMS: Item[] = [
   {
     href: "/",
     label: "Explore",
@@ -59,7 +60,7 @@ const ITEMS: Item[] = [
 
 /// The persistent left rail. Collapsed by default to an icon strip and expandable to show labels,
 /// with the choice remembered per browser -- navigation shouldn't cost horizontal room on a page
-/// that is mostly a wide table.
+/// that is mostly a wide table. Phones replace this rail entirely with the MobileNav bottom bar.
 export default function SideRail() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(true);
@@ -89,7 +90,7 @@ export default function SideRail() {
 
   return (
     <aside
-      className={`sticky top-0 z-50 flex h-screen shrink-0 flex-col border-r border-border bg-card transition-[width] duration-200 ${
+      className={`sticky top-0 z-50 hidden h-screen shrink-0 flex-col border-r border-border bg-card transition-[width] duration-200 md:flex ${
         collapsed ? "w-[60px]" : "w-[188px]"
       }`}
     >
@@ -99,7 +100,7 @@ export default function SideRail() {
       </Link>
 
       <nav className="flex flex-1 flex-col gap-1 px-2 pt-2">
-        {ITEMS.map((item) => {
+        {NAV_ITEMS.map((item) => {
           const active = pathname === item.href;
           return (
             <Link

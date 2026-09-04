@@ -326,11 +326,19 @@ export default function WalletModal({ open, onClose }: WalletModalProps) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+    // On phones this is a bottom sheet (anchored to the bottom edge, sliding up), on desktop a
+    // centered dialog -- same content, only the placement and entrance animation differ.
+    <div
+      className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 backdrop-blur-sm animate-fade-in sm:items-center"
+      onClick={onClose}
+    >
       <div
-        className="bg-card border border-border rounded-2xl w-full max-w-sm p-5 shadow-2xl flex flex-col"
+        className="max-h-[92dvh] w-full overflow-y-auto rounded-t-2xl border border-border bg-card p-5 shadow-2xl animate-sheet-up sm:max-w-sm sm:animate-none sm:rounded-2xl"
+        style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Sheet grab handle -- purely visual, shown where the panel slides up from the bottom edge. */}
+        <div className="mx-auto mb-3 h-1 w-10 shrink-0 rounded-full bg-border sm:hidden" />
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-bold text-foreground">
             {phase === "wallets" ? "Connect a wallet" : "Terms of Service"}

@@ -475,9 +475,9 @@ export default function CreatePage() {
                 label="Your fee"
                 value={leverageEnabled && feeInHfyc ? "0.50% in LYC" : `0.50% in ${quoteName}`}
               />
-              <div className="mt-1.5 flex items-center justify-between border-t border-border pt-1.5 text-xs">
-                <span className="font-semibold text-foreground">You&apos;ll pay</span>
-                <span className="font-mono font-semibold text-accent">{willPayLabel}</span>
+              <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-border pt-1.5 text-xs">
+                <span className="shrink-0 font-semibold text-foreground">You&apos;ll pay</span>
+                <span className="truncate text-right font-mono font-semibold text-accent">{willPayLabel}</span>
               </div>
             </div>
           </div>

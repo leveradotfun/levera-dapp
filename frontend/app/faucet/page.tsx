@@ -295,8 +295,8 @@ export default function FaucetPage() {
 
       {/* Community ETH pot */}
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
             <div className="text-sm font-semibold text-foreground">Community ETH pot</div>
             <p className="text-[11px] leading-relaxed text-muted mt-0.5">
               Native ETH can&apos;t be minted — it can only be shared. Contribute gas you don&apos;t
@@ -304,7 +304,7 @@ export default function FaucetPage() {
               dry, so top-ups keep the faucet alive.
             </p>
           </div>
-          <div className="text-right shrink-0 ml-4">
+          <div className="shrink-0 text-left sm:text-right sm:ml-4">
             <div className="text-[10px] uppercase tracking-wide text-muted">Pot balance</div>
             <div className="font-mono text-lg font-bold text-foreground">{potEth.toFixed(4)} ETH</div>
           </div>
@@ -334,7 +334,7 @@ export default function FaucetPage() {
                 placeholder="0.001"
                 className="w-full bg-transparent text-sm font-mono text-foreground outline-none"
               />
-              <span className="shrink-0 font-mono text-xs text-muted">
+              <span className="hidden shrink-0 font-mono text-xs text-muted sm:inline">
                 ETH · yours {userBalance("eth")}
               </span>
             </div>

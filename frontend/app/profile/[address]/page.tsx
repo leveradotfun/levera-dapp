@@ -193,7 +193,7 @@ export default function ProfileAddressPage() {
                 </div>
               )}
               <div className="flex-1 pb-1">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {displayXProfile ? (
                     <>
                       <h1 className="text-2xl font-bold text-foreground">{displayXProfile.name}</h1>
@@ -238,9 +238,9 @@ export default function ProfileAddressPage() {
 
         {/* Portfolio Value */}
         <div className="rounded-xl border border-border bg-card p-6">
-          <div className="flex items-start justify-between">
-            <div>
-              <div className="text-4xl font-bold text-foreground">{usd(holdingsValueUsd)}</div>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-3xl font-bold text-foreground sm:text-4xl">{usd(holdingsValueUsd)}</div>
               <div className="flex items-center gap-2 mt-1">
                 <span className={`text-sm font-semibold ${holdingsPnlUsd >= 0n ? "text-green" : "text-red"}`}>
                   {holdingsPnlUsd >= 0n ? "+" : ""}{usd(holdingsPnlUsd)} ({holdingsValueUsd > 0n ? ((Number(holdingsPnlUsd) / Number(holdingsValueUsd)) * 100).toFixed(2) : "0.00"}%)
@@ -263,24 +263,24 @@ export default function ProfileAddressPage() {
               <span className="text-sm text-muted">≈ {usd(ethValueUsd)}</span>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-4 mt-6">
+          <div className="grid grid-cols-3 gap-3 mt-6 sm:gap-4">
             <div>
               <div className="text-[10px] uppercase tracking-wide text-muted">Realized</div>
-              <div className={`mt-1 font-mono text-lg ${realizedPnl >= 0 ? "text-green" : "text-red"}`}>{usd(BigInt(Math.round(realizedPnl * 1e18)))}</div>
+              <div className={`mt-1 font-mono text-sm sm:text-lg ${realizedPnl >= 0 ? "text-green" : "text-red"}`}>{usd(BigInt(Math.round(realizedPnl * 1e18)))}</div>
             </div>
             <div>
               <div className="text-[10px] uppercase tracking-wide text-muted">Unrealized</div>
-              <div className={`mt-1 font-mono text-lg ${holdingsPnlUsd >= 0n ? "text-green" : "text-red"}`}>{usd(holdingsPnlUsd)}</div>
+              <div className={`mt-1 font-mono text-sm sm:text-lg ${holdingsPnlUsd >= 0n ? "text-green" : "text-red"}`}>{usd(holdingsPnlUsd)}</div>
             </div>
             <div>
               <div className="text-[10px] uppercase tracking-wide text-muted">Buy Volume</div>
-              <div className="mt-1 font-mono text-lg text-foreground">{usd(BigInt(Math.round(buyVolume * 1e18)))}</div>
+              <div className="mt-1 font-mono text-sm text-foreground sm:text-lg">{usd(BigInt(Math.round(buyVolume * 1e18)))}</div>
             </div>
           </div>
         </div>
 
         {/* Tabs */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {(["open", "closed", "activity", "lyc"] as const).map((tab) => (
             <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === tab ? "bg-accent text-accent-ink" : "bg-surface text-muted hover:text-foreground"}`}>
               {tab === "lyc" ? "LYC" : tab.charAt(0).toUpperCase() + tab.slice(1)}

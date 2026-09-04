@@ -34,15 +34,15 @@
     "QuoteZap": "sha256:b7dbaddadbf7ca706b648d6612cb0a48b99ff8795cb0b9de7d0f0b9057ba0978"
   },
   "seededPrices": {
-    "ethUsd": "2525.56946329",
+    "ethUsd": "2526.57",
     "usdgUsd": "1.00015429",
-    "cbbtcUsd": "80890.68144558"
+    "cbbtcUsd": "81300.4851687"
   },
-  "seededAt": "2026-09-04T09:06:12.927Z",
-  "updatedAt": 1788512772932,
+  "seededAt": "2026-09-04T10:04:00.617Z",
+  "updatedAt": 1788516240623,
   "seededSources": {
-    "ethUsd": "live (939s old)",
-    "usdgUsd": "live (63376s old)",
-    "cbbtcUsd": "live (27692s old)"
+    "ethUsd": "live (2486s old)",
+    "usdgUsd": "live (66844s old)",
+    "cbbtcUsd": "live (2683s old)"
   }
 }

@@ -59,10 +59,10 @@ export default function ExploreStats({
   return (
     <div className="mb-5 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border lg:grid-cols-4">
       {tiles.map((t) => (
-        <div key={t.label} className="bg-card px-4 py-3">
+        <div key={t.label} className="min-w-0 bg-card px-4 py-3">
           <div className="text-[10px] uppercase tracking-wide text-muted">{t.label}</div>
-          <div className="font-mono text-lg font-bold text-foreground">{t.value}</div>
-          {t.sub ? <div className="text-[10px] text-muted">{t.sub}</div> : null}
+          <div className="truncate font-mono text-base font-bold text-foreground lg:text-lg">{t.value}</div>
+          {t.sub ? <div className="truncate text-[10px] text-muted">{t.sub}</div> : null}
         </div>
       ))}
     </div>

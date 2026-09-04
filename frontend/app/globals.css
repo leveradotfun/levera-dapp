@@ -45,6 +45,27 @@ input, select, textarea, button {
   font-family: inherit;
 }
 
+/* Bottom-sheet entrance: content slides up from below the viewport while the dimmed backdrop
+   fades in. Animations only run where the sheet is actually a sheet -- desktop overlays keep
+   their plain appearance via sm:animate-none / lg:animate-none. */
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-sheet-up {
+  animation: sheet-up 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+
 @keyframes vibrate {
   0%, 100% { transform: translateX(0); }
   10% { transform: translateX(-1px) rotate(-0.5deg); }
