@@ -37,39 +37,56 @@ export async function GET(req: NextRequest) {
   const host = forwardedHost || url.host;
   const base = `${url.protocol}//${host}`;
 
+  // Decode the signed state FIRST, before branching on error/success, so every redirect below --
+  // including the error paths -- can send the user back to the page they started from instead of
+  // always landing on /profile. X preserves the state param even when returning an error.
+  let returnTo = "/profile";
+  let originalState: string | undefined;
+  let codeVerifier: string | undefined;
+  let stateValid = false;
+  if (signedState) {
+    try {
+      const decoded = atob(signedState.replace(/-/g, "+").replace(/_/g, "/"));
+      const parts = decoded.split("|");
+      if (parts.length === 4) {
+        const [s, v, encodedReturnTo, sig] = parts;
+        const valid = await hmacVerify(`${s}|${v}|${encodedReturnTo}`, sig);
+        if (valid) {
+          originalState = s;
+          codeVerifier = v;
+          stateValid = true;
+          const decodedReturnTo = decodeURIComponent(encodedReturnTo);
+          // Re-check on the way out too: the signature guarantees this app issued it, but a
+          // redirect target should never leave this origin regardless of source.
+          if (decodedReturnTo.startsWith("/") && !decodedReturnTo.startsWith("//") && !decodedReturnTo.startsWith("/\\")) {
+            returnTo = decodedReturnTo;
+          }
+        }
+      }
+    } catch {
+      // fall through with the /profile default and stateValid left false
+    }
+  }
+  void originalState; // recovered for completeness/parity with the signed payload; unused otherwise
+
   if (error) {
-    return redirect(`${base}/profile?x_error=${error}`);
+    return redirect(`${base}${returnTo}${returnTo.includes("?") ? "&" : "?"}x_error=${error}`);
   }
 
   if (!signedState) {
     return redirect(`${base}/profile?x_error=missing_state`);
   }
 
-  // Decode the signed state to recover the original state + code verifier
-  let originalState: string;
-  let codeVerifier: string;
-  try {
-    const decoded = atob(signedState.replace(/-/g, "+").replace(/_/g, "/"));
-    const parts = decoded.split("|");
-    if (parts.length !== 3) throw new Error("bad format");
-    [originalState, codeVerifier, ] = parts;
-    const sig = parts[2];
-
-    // Verify HMAC
-    const valid = await hmacVerify(`${originalState}|${codeVerifier}`, sig);
-    if (!valid) {
-      return redirect(`${base}/profile?x_error=invalid_signature`);
-    }
-  } catch {
-    return redirect(`${base}/profile?x_error=bad_state`);
+  if (!stateValid || !codeVerifier) {
+    return redirect(`${base}/profile?x_error=invalid_signature`);
   }
 
   if (!code) {
-    return redirect(`${base}/profile?x_error=missing_code`);
+    return redirect(`${base}${returnTo}${returnTo.includes("?") ? "&" : "?"}x_error=missing_code`);
   }
 
   if (!X_CLIENT_ID || !X_CLIENT_SECRET || !X_REDIRECT_URI) {
-    return redirect(`${base}/profile?x_error=not_configured`);
+    return redirect(`${base}${returnTo}${returnTo.includes("?") ? "&" : "?"}x_error=not_configured`);
   }
 
   try {
@@ -91,7 +108,7 @@ export async function GET(req: NextRequest) {
     if (!tokenRes.ok) {
       const errBody = await tokenRes.text();
       console.error("X token exchange failed:", tokenRes.status, errBody);
-      return redirect(`${base}/profile?x_error=token_exchange_failed`);
+      return redirect(`${base}${returnTo}${returnTo.includes("?") ? "&" : "?"}x_error=token_exchange_failed`);
     }
 
     const tokenData = await tokenRes.json();
@@ -104,7 +121,7 @@ export async function GET(req: NextRequest) {
     );
 
     if (!userRes.ok) {
-      return redirect(`${base}/profile?x_error=profile_fetch_failed`);
+      return redirect(`${base}${returnTo}${returnTo.includes("?") ? "&" : "?"}x_error=profile_fetch_failed`);
     }
 
     const userData = await userRes.json();
@@ -119,9 +136,9 @@ export async function GET(req: NextRequest) {
     };
 
     const encoded = btoa(JSON.stringify(profile));
-    return redirect(`${base}/profile?x_connected=${encoded}`);
+    return redirect(`${base}${returnTo}${returnTo.includes("?") ? "&" : "?"}x_connected=${encoded}`);
   } catch (e) {
     console.error("X OAuth callback error:", e);
-    return redirect(`${base}/profile?x_error=internal`);
+    return redirect(`${base}${returnTo}${returnTo.includes("?") ? "&" : "?"}x_error=internal`);
   }
 }

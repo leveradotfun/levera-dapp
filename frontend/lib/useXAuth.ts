@@ -49,7 +49,10 @@ export function useXAuth(walletAddress: string | null) {
   }, [walletAddress]);
 
   const connect = useCallback(() => {
-    window.location.href = "/api/auth/x/connect";
+    // Carry the current page through the OAuth round trip so the callback returns here instead
+    // of always landing on /profile -- see app/api/auth/x/connect's sanitizeReturnTo.
+    const returnTo = window.location.pathname + window.location.search;
+    window.location.href = `/api/auth/x/connect?returnTo=${encodeURIComponent(returnTo)}`;
   }, []);
 
   const disconnect = useCallback(() => {

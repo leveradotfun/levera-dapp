@@ -20,12 +20,26 @@ async function hmacSign(data: string): Promise<string> {
     .replace(/=+$/, "");
 }
 
+// Only a same-origin relative path may ride along in the state -- anything else (a full URL, a
+// protocol-relative "//evil.com" or "/\evil.com", an embedded "://") would turn the callback's
+// final redirect into an open redirect, since the callback trusts whatever comes back out of the
+// signed state without re-checking the origin.
+function sanitizeReturnTo(raw: string | null): string {
+  if (!raw) return "/profile";
+  if (!raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\") || raw.includes("://")) {
+    return "/profile";
+  }
+  return raw;
+}
+
 export async function GET(req: NextRequest) {
   if (!X_CLIENT_ID || !X_REDIRECT_URI) {
     return new Response("X OAuth not configured. Set X_CLIENT_ID and X_REDIRECT_URI in .env.local", {
       status: 500,
     });
   }
+
+  const returnTo = sanitizeReturnTo(req.nextUrl.searchParams.get("returnTo"));
 
   // CSRF state
   const stateBytes = new Uint8Array(16);
@@ -43,8 +57,10 @@ export async function GET(req: NextRequest) {
     .replace(/\//g, "_")
     .replace(/=+$/, "");
 
-  // Encode state + verifier into a signed payload that survives the OAuth redirect
-  const payload = `${state}|${codeVerifier}`;
+  // Encode state + verifier + the page to return to into a signed payload that survives the
+  // OAuth redirect. Signed together with everything else so returnTo can't be tampered with
+  // independently of the CSRF check.
+  const payload = `${state}|${codeVerifier}|${encodeURIComponent(returnTo)}`;
   const sig = await hmacSign(payload);
   const signedState = btoa(`${payload}|${sig}`)
     .replace(/\+/g, "-")

@@ -5,13 +5,6 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname, ".."),
-  // db/migrate.ts loads schema.sql with a plain fs.readFile, not an import -- Next's output
-  // tracer only follows import/require statements, so a `standalone` build never copies this
-  // file in, and every route that calls ensureSchema() (effectively all of them; see db/pool.ts)
-  // 500s at runtime with ENOENT the first time it tries to apply the schema.
-  outputFileTracingIncludes: {
-    "/api/**/*": ["./db/schema.sql"],
-  },
   turbopack: {
     root: path.join(__dirname, ".."),
   },

@@ -1,7 +1,5 @@
-import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { query } from "./pool";
+import { SCHEMA_SQL } from "./schema";
 
 /// Schema management, run automatically rather than by hand.
 ///
@@ -13,16 +11,17 @@ import { query } from "./pool";
 /// So the apps call `ensureSchema()` before their first query and it becomes a non-event. It is
 /// idempotent (`CREATE TABLE IF NOT EXISTS` throughout) and cached per process, so the cost after
 /// the first call is a boolean check.
-
-const here = dirname(fileURLToPath(import.meta.url));
+///
+/// Reads the schema from schema.ts (a JS string constant), not schema.sql off disk -- see
+/// schema.ts's own comment for why a runtime file read doesn't survive a Vercel deploy of this
+/// monorepo.
 
 let ready: Promise<void> | null = null;
 
 export function ensureSchema(): Promise<void> {
   if (!ready) {
     ready = (async () => {
-      const sql = await readFile(join(here, "schema.sql"), "utf8");
-      await query(sql);
+      await query(SCHEMA_SQL);
     })().catch((e) => {
       // Do not cache a failure: a database that was not up yet should succeed on the next attempt
       // rather than poisoning the process until it restarts.
