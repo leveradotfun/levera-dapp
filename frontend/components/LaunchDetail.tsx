@@ -41,6 +41,9 @@ import { toastError, toastSuccess } from "@/lib/toast";
 import { TX_TIMEOUT_MS, withTimeout } from "@/lib/txTimeout";
 
 const FAV_KEY = "launchpad-favorites";
+// Last-used trade side persists across reloads: a seller reloading mid-position shouldn't be
+// dropped back on the buy tab.
+const TRADE_SIDE_KEY = "launchpad-trade-side";
 
 const PALETTE = ["#ECE3D1", "#22c55e", "#38bdf8", "#f472b6", "#fbbf24", "#a78bfa", "#fb7185", "#34d399"];
 const EMOJI = ["🐕", "🚀", "🌙", "🐸", "💎", "🔥", "⚡", "🦍", "🍌", "👽"];
@@ -108,8 +111,27 @@ export default function LaunchDetail({
     // Re-derive whenever the trade log grows -- a new trade means the holder set may have changed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [launch.address, launch.amm, trades.length]);
-  const [amount, setAmount] = useState("0.5");
+  const [amount, setAmount] = useState("");
   const [side, setSide] = useState<"buy" | "sell">("buy");
+  // Reopen on the tab the user last traded on: a seller reloading mid-position shouldn't land on
+  // Buy. The read lives in an effect (not a lazy initializer) so SSR and first client render agree.
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(TRADE_SIDE_KEY) === "sell") setSide("sell");
+    } catch {
+      // localStorage unavailable — plain buy default
+    }
+  }, []);
+
+  function changeSide(m: "buy" | "sell") {
+    setSide(m);
+    setAmount("");
+    try {
+      localStorage.setItem(TRADE_SIDE_KEY, m);
+    } catch {
+      // persistence is best-effort
+    }
+  }
   // "ETH" here means "the launch's quote asset, paid natively" — for a cbBTC-quoted coin that is
   // plain cbBTC (there is no native cbBTC, so this is its only quote tab), for a WETH-quoted coin
   // it goes through the QuoteZap so a buyer never needs to hold WETH. "WETH" is only offered for a
@@ -401,10 +423,16 @@ export default function LaunchDetail({
   }, [wallet.address, quoteInfo, wrapsNative, launch.quoteToken]);
 
   // Default slippage 1% for every swap — previously auto-bumped to 15% after graduation. Also
-  // reset the receive token: a "WETH" picked on an ETH-quoted coin is meaningless on a cbBTC one.
+  // reset the per-pool picks: the receive token (a "WETH" picked on an ETH-quoted coin is
+  // meaningless on a cbBTC one) and the default spend — the user's own WETH on ETH-quoted coins
+  // (the common post-sell case, no wrap hop), the quote ERC-20 itself on cbBTC ones. The amount
+  // box starts empty either way; the user types what they want.
   useEffect(() => {
     setSlippageBps(100);
     setReceiveToken("ETH");
+    setPayToken(wrapsNative ? "WETH" : "ETH");
+    // wrapsNative is derived from this same launch; it is settled before the page mounts LaunchDetail.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [launch.address]);
 
   // The amount box is denominated in what is actually being SPENT: the pay token when buying
@@ -542,7 +570,7 @@ export default function LaunchDetail({
     <>
       <SwapCard
         mode={side}
-        onModeChange={(m) => { setSide(m); setAmount(quoteSymbol === "cbBTC" ? "0.01" : "0.5"); }}
+        onModeChange={changeSide}
         buyLabel="Buy" sellLabel="Sell"
         inputToken={{
           symbol: side === "buy" ? paySymbol : launch.symbol,

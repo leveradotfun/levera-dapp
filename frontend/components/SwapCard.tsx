@@ -312,7 +312,7 @@ export default function SwapCard({
           <input
             value={formatWithCommas(value)}
             onChange={(e) => onValueChange(sanitizeNumericInput(e.target.value))}
-            placeholder="0"
+            placeholder="0.0"
             inputMode="decimal"
             className="min-w-0 flex-1 bg-transparent font-mono text-3xl text-foreground outline-none placeholder:text-muted"
           />

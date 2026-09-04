@@ -8,6 +8,7 @@ import {
   isFollowing,
   listLedger,
   listLedgerByFactory,
+  listFollows,
   listNavSamples,
   listPricePoints,
   listRebalances,
@@ -184,6 +185,12 @@ export async function handleFollowsGet(req: Request): Promise<Response> {
   const target = (url.searchParams.get("address") ?? "").trim();
   const viewer = (url.searchParams.get("viewer") ?? "").trim();
   if (!ADDRESS_RE.test(target)) return json({ error: "invalid address" }, 400);
+  // ?list=followers|following swaps the counts for the wallets behind them -- the profile page's
+  // follower/following modals read this. Public data, same as the counts themselves.
+  const list = url.searchParams.get("list");
+  if (list === "followers" || list === "following") {
+    return json({ entries: await listFollows(target, list) });
+  }
   const counts = await followCounts(target);
   const viewerFollows = ADDRESS_RE.test(viewer) ? await isFollowing(viewer, target) : false;
   return json({ ...counts, viewerFollows });

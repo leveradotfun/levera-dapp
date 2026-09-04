@@ -29,7 +29,7 @@ import { LycGlobal, LycPosition, LycTx, fetchLycGlobal, fetchLycPosition, fetchL
 import { timeAgo } from "@/lib/utils";
 import { useXAuth } from "@/lib/useXAuth";
 import { loadXProfile } from "@/lib/xAuth";
-import { FollowInfo, fetchFollowInfo, setFollow } from "@/lib/social";
+import { FollowInfo, fetchFollowInfo, fetchFollowList, FollowListEntry, setFollow } from "@/lib/social";
 import { toastError, toastSuccess } from "@/lib/toast";
 
 type CreatedRow = { launch: LaunchSummary; fees: CreatorFees };
@@ -371,6 +371,8 @@ export default function ProfileAddressPage() {
   const [lycPnl, setLycPnl] = useState<LycPnl | null>(null);
   const [pnlWindow, setPnlWindow] = useState<PnlWindow>("1D");
   const [followInfo, setFollowInfo] = useState<FollowInfo | null>(null);
+  // Which follower/following list the modal is showing, if either is open.
+  const [followModal, setFollowModal] = useState<"followers" | "following" | null>(null);
   const [createdFirstTs, setCreatedFirstTs] = useState<number | null>(null);
 
   const targetAddress = profileAddress;
@@ -600,14 +602,22 @@ export default function ProfileAddressPage() {
           </div>
 
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-secondary">
-            <span>
+            <button
+              onClick={() => setFollowModal("followers")}
+              className="transition-colors hover:text-foreground"
+              title="Show followers"
+            >
               <span className="font-semibold text-foreground">{followInfo?.followers ?? "—"}</span>{" "}
               <span className="text-muted">Followers</span>
-            </span>
-            <span>
+            </button>
+            <button
+              onClick={() => setFollowModal("following")}
+              className="transition-colors hover:text-foreground"
+              title="Show following"
+            >
               <span className="font-semibold text-foreground">{followInfo?.following ?? "—"}</span>{" "}
               <span className="text-muted">Following</span>
-            </span>
+            </button>
             <button
               onClick={() => navigator.clipboard.writeText(profileAddress).catch(() => {})}
               className="inline-flex items-center gap-1 font-mono text-xs text-muted transition-colors hover:text-foreground"
@@ -831,6 +841,104 @@ export default function ProfileAddressPage() {
           ) : null}
         </div>
       ) : null}
+
+      {/* ── Follower / following list modal ── */}
+      {followModal ? (
+        <FollowListModal profileAddress={profileAddress} kind={followModal} onClose={() => setFollowModal(null)} />
+      ) : null}
+    </div>
+  );
+}
+
+/// The wallets behind the Followers / Following counts, X-enriched where the wallet has connected
+/// Twitter. Rows navigate to that wallet's profile -- which is exactly the view-only access any
+/// visitor already has, just one click deeper.
+function FollowListModal({
+  profileAddress,
+  kind,
+  onClose,
+}: {
+  profileAddress: string;
+  kind: "followers" | "following";
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const [entries, setEntries] = useState<FollowListEntry[] | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    fetchFollowList(profileAddress, kind)
+      .then((e) => {
+        if (live) setEntries(e);
+      })
+      .catch(() => {
+        if (live) setEntries([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [profileAddress, kind]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div
+        className="w-full max-w-sm overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <h2 className="text-sm font-semibold capitalize text-foreground">{kind}</h2>
+          <button onClick={onClose} className="rounded-lg p-1 text-muted transition-colors hover:text-foreground" title="Close">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="max-h-80 overflow-y-auto">
+          {entries === null ? (
+            <RowsSkeleton rows={4} />
+          ) : entries.length === 0 ? (
+            <PanelEmpty
+              title={kind === "followers" ? "No followers yet" : "Not following anyone yet"}
+              hint={kind === "followers" ? "Wallets that follow this profile will show up here." : "Wallets this profile follows will show up here."}
+            />
+          ) : (
+            <div className="divide-y divide-border">
+              {entries.map((e) => (
+                <button
+                  key={e.address}
+                  onClick={() => {
+                    onClose();
+                    router.push(`/profile/${e.address}`);
+                  }}
+                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-hover/40"
+                >
+                  {e.xImageUrl ? (
+                    <img src={e.xImageUrl} alt={e.xName || e.address} className="h-9 w-9 shrink-0 rounded-xl object-cover" />
+                  ) : (
+                    <CoinAvatar address={e.address} size={36} />
+                  )}
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-foreground">{e.xName || shortAddress(e.address)}</div>
+                    {e.xUsername ? (
+                      <div className="truncate text-xs text-accent">@{e.xUsername}</div>
+                    ) : (
+                      <div className="font-mono text-xs text-muted">{shortAddress(e.address)}</div>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

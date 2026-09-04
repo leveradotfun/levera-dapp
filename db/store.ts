@@ -572,3 +572,37 @@ export async function removeFollow(follower: string, target: string): Promise<vo
   await ensureSchema();
   await query(`DELETE FROM follows WHERE follower = $1 AND target = $2`, [norm(follower), norm(target)]);
 }
+
+export type FollowListEntry = {
+  address: string;
+  xName: string;
+  xUsername: string;
+  xImageUrl: string;
+};
+
+/// The wallets behind a profile's follower/following count, newest first. The X enrichment is a
+/// LEFT JOIN, so a wallet that never connected Twitter still lists -- just under its bare address.
+export async function listFollows(address: string, kind: "followers" | "following"): Promise<FollowListEntry[]> {
+  await ensureSchema();
+  const rows = await query<{
+    address: string;
+    name: string;
+    username: string;
+    profile_image_url: string;
+  }>(
+    kind === "followers"
+      ? `SELECT f.follower AS address, x.name, x.username, x.profile_image_url
+           FROM follows f LEFT JOIN x_profiles x ON x.address = f.follower
+          WHERE f.target = $1 ORDER BY f.created_at DESC`
+      : `SELECT f.target AS address, x.name, x.username, x.profile_image_url
+           FROM follows f LEFT JOIN x_profiles x ON x.address = f.target
+          WHERE f.follower = $1 ORDER BY f.created_at DESC`,
+    [norm(address)],
+  );
+  return rows.map((r) => ({
+    address: r.address,
+    xName: r.name ?? "",
+    xUsername: r.username ?? "",
+    xImageUrl: r.profile_image_url ?? "",
+  }));
+}

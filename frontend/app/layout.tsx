@@ -27,7 +27,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Levera - First leveraged memecoin launchpad",
     description: "Leveraged memecoin launchpad",
-    images: ["/.png"],
+    images: ["/og-image.png"],
   },
 };
 

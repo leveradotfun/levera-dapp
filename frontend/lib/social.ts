@@ -20,6 +20,20 @@ export async function fetchFollowInfo(target: string, viewer: string | null): Pr
   );
 }
 
+export type FollowListEntry = {
+  address: string;
+  xName: string;
+  xUsername: string;
+  xImageUrl: string;
+};
+
+/// The wallets behind a profile's follower/following count. X fields are empty for wallets that
+/// never connected Twitter.
+export async function fetchFollowList(address: string, kind: "followers" | "following"): Promise<FollowListEntry[]> {
+  const q = new URLSearchParams({ address, list: kind });
+  return (await apiGet<{ entries: FollowListEntry[] }>(`/api/follows?${q.toString()}`))?.entries ?? [];
+}
+
 /// Signs the action with the connected wallet and posts it. The server recovers the signer from
 /// the signature, so nobody can follow "as" someone else by forging a request body.
 export async function setFollow(target: string, action: "follow" | "unfollow"): Promise<void> {
