@@ -1,11 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useDisconnect } from "wagmi";
 import { useAppState } from "@/lib/appState";
 import { useWallet, shortAddress } from "@/lib/wallet";
-import ConnectWalletButton from "@/components/ConnectWalletButton";
 import {
   CreatorFees,
   HeldLaunch,
@@ -23,12 +21,16 @@ import {
   WAD,
 } from "@/lib/launchpad";
 import { Skeleton } from "@/components/Skeleton";
-import { tradesFor } from "@/lib/launchStats";
+import { TradePoint, tradesFor, isTrade, fetchLaunchStats } from "@/lib/launchStats";
+import { fetchLaunchCollateralPriceUsd } from "@/lib/launchpad";
 import PriceLabel from "@/components/PriceLabel";
-import { TxLink } from "@/components/ExplorerLink";
-import { LycGlobal, LycPosition, fetchLycGlobal, fetchLycPosition, fetchLycPnl, LycPnl } from "@/lib/lyc";
+import { TxLink, AddressLink } from "@/components/ExplorerLink";
+import { LycGlobal, LycPosition, LycTx, fetchLycGlobal, fetchLycPosition, fetchLycPnl, LycPnl } from "@/lib/lyc";
+import { timeAgo } from "@/lib/utils";
 import { useXAuth } from "@/lib/useXAuth";
 import { loadXProfile } from "@/lib/xAuth";
+import { FollowInfo, fetchFollowInfo, setFollow } from "@/lib/social";
+import { toastError, toastSuccess } from "@/lib/toast";
 
 type CreatedRow = { launch: LaunchSummary; fees: CreatorFees };
 type Tab = "open" | "closed" | "activity" | "lyc";
@@ -46,6 +48,304 @@ function isValidAddress(a: string): boolean {
   return /^0x[0-9a-fA-F]{40}$/.test(a);
 }
 
+function CoinAvatar({ address, size = 40 }: { address: string; size?: number }) {
+  const hc = hashOf(address);
+  return (
+    <div
+      className="flex shrink-0 items-center justify-center rounded-xl"
+      style={{
+        width: size,
+        height: size,
+        fontSize: size * 0.45,
+        backgroundColor: `${PALETTE[hc % PALETTE.length]}22`,
+        border: `1px solid ${PALETTE[hc % PALETTE.length]}55`,
+      }}
+    >
+      {EMOJI[(hc >>> 3) % EMOJI.length]}
+    </div>
+  );
+}
+
+/// Floats formatted as "$1,234.56" without the bigint-WAD round trip -- PnL math here runs in plain
+/// numbers off the trade log, and `usd()` cannot take a negative WAD cleanly.
+function usdNum(n: number): string {
+  const abs = Math.abs(n);
+  const digits = abs >= 10_000 ? 0 : 2;
+  return `${n < 0 ? "-" : ""}$${abs.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+}
+
+function compactNum(n: number): string {
+  return usdCompact(BigInt(Math.round(Math.abs(n) * 1e18)));
+}
+
+// ── Position book ──────────────────────────────────────────────────────────────────────────────
+// One pass over the trade log builds everything the page shows: per-coin positions (FIFO realized
+// PnL), the all-time aggregates, the ranked Top-trades list, and the 1D/1W/1M window delta.
+
+type PnlWindow = "1D" | "1W" | "1M";
+const WINDOW_MS: Record<PnlWindow, number> = { "1D": 86_400_000, "1W": 7 * 86_400_000, "1M": 30 * 86_400_000 };
+
+type CoinPosition = {
+  launch: LaunchSummary;
+  boughtUsd: number;
+  soldUsd: number;
+  trades: number;
+  firstTs: number;
+  lastTs: number;
+  held: boolean;
+  tokensNow: number;
+  valueNow: number;
+  unrealizedUsd: number;
+  realizedUsd: number;
+  profit: number;
+  entryPriceUsd: number;
+};
+
+type PositionBook = {
+  coins: CoinPosition[];
+  closed: CoinPosition[];
+  top: CoinPosition[];
+  realizedUsd: number;
+  unrealizedUsd: number;
+  buyVolume: number;
+  totalProfit: number;
+  portfolioValue: number;
+  firstActivityTs: number | null;
+  windowPnl: (w: PnlWindow, nowMs?: number) => { usd: number; pct: number | null };
+};
+
+const TOKEN_EPS = 1e-9;
+
+const EMPTY_BOOK: PositionBook = {
+  coins: [],
+  closed: [],
+  top: [],
+  realizedUsd: 0,
+  unrealizedUsd: 0,
+  buyVolume: 0,
+  totalProfit: 0,
+  portfolioValue: 0,
+  firstActivityTs: null,
+  windowPnl: () => ({ usd: 0, pct: null }),
+};
+
+function usePositions(launches: LaunchSummary[], holdings: HeldLaunch[] | null, userAddr: string | null): PositionBook | null {
+  return useMemo<PositionBook | null>(() => {
+    if (userAddr === null || holdings === null) return null;
+    const heldBy = new Map(holdings.map((h) => [h.address.toLowerCase(), h]));
+
+    const coins: CoinPosition[] = [];
+    const tradesByUser = new Map<string, TradePoint[]>();
+    let realizedUsd = 0;
+    let unrealizedUsd = 0;
+    let buyVolume = 0;
+    let portfolioValue = 0;
+    let firstActivityTs: number | null = null;
+    const bumpFirst = (ts: number) => {
+      if (ts > 0 && (firstActivityTs === null || ts < firstActivityTs)) firstActivityTs = ts;
+    };
+
+    for (const launch of launches) {
+      const pts = tradesFor(launch.address)
+        .filter((t) => isTrade(t) && t.trader === userAddr)
+        .sort((a, b) => a.ts - b.ts);
+      if (pts.length === 0) continue;
+      tradesByUser.set(launch.address, pts);
+
+      // FIFO over this user's own trades: sells consume the oldest buy lots at their average
+      // price. For a fully-exited coin this equals sells minus buys; for a held one it is the
+      // profit already banked on the way up.
+      const lots: { tokens: number; price: number }[] = [];
+      let boughtUsd = 0;
+      let soldUsd = 0;
+      let realized = 0;
+      let firstTs = pts[0].ts;
+      let lastTs = pts[0].ts;
+      for (const t of pts) {
+        firstTs = Math.min(firstTs, t.ts);
+        lastTs = Math.max(lastTs, t.ts);
+        if (t.isBuy) {
+          boughtUsd += t.volumeUsd;
+          buyVolume += t.volumeUsd;
+          lots.push({ tokens: t.tokenAmount, price: t.tokenAmount > 0 ? t.volumeUsd / t.tokenAmount : 0 });
+        } else {
+          soldUsd += t.volumeUsd;
+          const price = t.tokenAmount > 0 ? t.volumeUsd / t.tokenAmount : 0;
+          let rem = t.tokenAmount;
+          while (rem > TOKEN_EPS && lots.length > 0) {
+            const lot = lots[0];
+            const take = Math.min(rem, lot.tokens);
+            realized += (price - lot.price) * take;
+            lot.tokens -= take;
+            rem -= take;
+            if (lot.tokens <= TOKEN_EPS) lots.shift();
+          }
+          if (rem > TOKEN_EPS) realized += price * rem; // tokens that never passed through a logged buy
+        }
+      }
+
+      const held = heldBy.get(launch.address.toLowerCase());
+      const valueNow = held ? Number(held.valueUsd) / 1e18 : 0;
+      // Cost basis of what is still held, straight from the FIFO lots. The ledger-DB aggregate
+      // behind HeldLaunch.pnlUsd only knows trades this browser recorded, so on any address that
+      // traded elsewhere it reads a zero basis and books the whole position value as profit.
+      const remainingCost = lots.reduce((s, l) => s + l.tokens * l.price, 0);
+      const unrealized = held ? valueNow - remainingCost : 0;
+      const tokenAmountSum = pts.reduce((s, t) => s + (t.isBuy ? t.tokenAmount : 0), 0);
+      const entry = tokenAmountSum > 0 ? boughtUsd / tokenAmountSum : 0;
+
+      coins.push({
+        launch,
+        boughtUsd,
+        soldUsd,
+        trades: pts.length,
+        firstTs,
+        lastTs,
+        held: !!held,
+        tokensNow: held ? Number(held.tokenBalance) / 1e18 : 0,
+        valueNow,
+        unrealizedUsd: unrealized,
+        realizedUsd: realized,
+        profit: realized + unrealized,
+        entryPriceUsd: entry,
+      });
+      realizedUsd += realized;
+      unrealizedUsd += unrealized;
+      portfolioValue += valueNow;
+      bumpFirst(firstTs);
+    }
+
+    for (const h of holdings) bumpFirst(h.stats.createdAt ?? 0);
+
+    const windowPnl = (w: PnlWindow, nowMs: number = Date.now()) => {
+      const t0 = nowMs - WINDOW_MS[w];
+      let pnl = 0;
+      let base = 0;
+      for (const c of coins) {
+        const pts = tradesByUser.get(c.launch.address) ?? [];
+        let bw = 0;
+        let sw = 0;
+        let btw = 0;
+        let stw = 0;
+        for (const t of pts) {
+          if (t.ts < t0) continue;
+          if (t.isBuy) {
+            bw += t.volumeUsd;
+            btw += t.tokenAmount;
+          } else {
+            sw += t.volumeUsd;
+            stw += t.tokenAmount;
+          }
+        }
+        if (!c.held && bw === 0 && sw === 0) continue;
+        // Tokens held when the window opened: what is held now, minus everything acquired since.
+        const h0 = Math.max(0, c.tokensNow + stw - btw);
+        // Mark h0 at the coin's market price when the window opened -- the last trade at or
+        // before t0, from the coin's full trade log, not just this user's.
+        const allPts = tradesFor(c.launch.address);
+        let p0 = 0;
+        for (let i = allPts.length - 1; i >= 0; i--) {
+          const t = allPts[i];
+          if (isTrade(t) && t.ts <= t0) {
+            p0 = t.priceUsd;
+            break;
+          }
+        }
+        const priceNow = Number(c.launch.priceUsd) / 1e18;
+        const v0 = h0 * (p0 > 0 ? p0 : priceNow);
+        // Wealth delta over the window: cash taken out minus cash put in, plus the change in the
+        // value of whatever was held across it.
+        pnl += sw - bw + (c.valueNow - v0);
+        base += v0 + bw;
+      }
+      return { usd: pnl, pct: base > 1e-9 ? (pnl / base) * 100 : null };
+    };
+
+    const closed = coins.filter((c) => !c.held).sort((a, b) => b.lastTs - a.lastTs);
+    const top = [...coins].sort((a, b) => b.profit - a.profit).slice(0, 5);
+    return {
+      coins,
+      closed,
+      top,
+      realizedUsd,
+      unrealizedUsd,
+      buyVolume,
+      totalProfit: realizedUsd + unrealizedUsd,
+      portfolioValue,
+      firstActivityTs,
+      windowPnl,
+    };
+  }, [launches, holdings, userAddr]);
+}
+
+function useActivity(launches: LaunchSummary[], userAddr: string | null, limit = 50) {
+  return useMemo(() => {
+    if (userAddr === null) return null;
+    const rows: { launch: LaunchSummary; ts: number; isBuy: boolean; volumeUsd: number; tokenAmount: number; tx: string }[] = [];
+    for (const launch of launches) {
+      for (const t of tradesFor(launch.address)) {
+        if (!isTrade(t) || t.trader !== userAddr) continue;
+        rows.push({ launch, ts: t.ts, isBuy: t.isBuy, volumeUsd: t.volumeUsd, tokenAmount: t.tokenAmount, tx: t.tx });
+      }
+    }
+    return rows.sort((a, b) => b.ts - a.ts).slice(0, limit);
+  }, [launches, userAddr, limit]);
+}
+
+const TABS: { key: Tab; label: string }[] = [
+  { key: "open", label: "Open" },
+  { key: "closed", label: "Closed" },
+  { key: "activity", label: "Activity" },
+  { key: "lyc", label: "LYC" },
+];
+
+function FollowButton({
+  target,
+  viewerAddress,
+  viewerFollows,
+  onChanged,
+}: {
+  target: string;
+  viewerAddress: string | null;
+  viewerFollows: boolean;
+  onChanged: () => void;
+}) {
+  const { setWalletModalOpen } = useAppState();
+  const [busy, setBusy] = useState(false);
+
+  async function onClick() {
+    if (!viewerAddress) {
+      setWalletModalOpen(true);
+      return;
+    }
+    setBusy(true);
+    const next = viewerFollows ? "unfollow" : "follow";
+    try {
+      await setFollow(target, next);
+      toastSuccess(next === "follow" ? "Followed" : "Unfollowed");
+      onChanged();
+    } catch (e) {
+      toastError(e, "Could not update follow");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={busy}
+      className={
+        viewerFollows
+          ? "rounded-lg border border-border bg-surface px-4 py-1.5 text-xs font-semibold text-foreground transition-colors hover:border-red/40 hover:text-red disabled:opacity-50"
+          : "rounded-lg bg-accent px-4 py-1.5 text-xs font-semibold text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-50"
+      }
+    >
+      {busy ? "…" : viewerFollows ? "Following" : "Follow"}
+    </button>
+  );
+}
+
 export default function ProfileAddressPage() {
   const params = useParams<{ address: string }>();
   const rawAddress = params.address ?? "";
@@ -59,39 +359,36 @@ export default function ProfileAddressPage() {
   const otherXProfile = profileAddress && !isOwnProfile ? loadXProfile(profileAddress) : null;
   const xAuth = useXAuth(isOwnProfile ? wallet.address : null);
   const displayXProfile = isOwnProfile ? xAuth.profile : otherXProfile;
-  const { disconnect } = useDisconnect();
 
   const [created, setCreated] = useState<CreatedRow[] | null>(null);
   const [holdings, setHoldings] = useState<HeldLaunch[] | null>(null);
-  const [claimHistory, setClaimHistory] = useState<ClaimRecord[]>([]);
+  const [claimHistory, setClaimHistory] = useState<ClaimRecord[] | null>(null);
   const [claiming, setClaiming] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("open");
-  const [timeframe, setTimeframe] = useState<"1D" | "1W" | "1M">("1D");
   const [collateralPrice, setCollateralPrice] = useState<bigint>(0n);
   const [lycGlobal, setLycGlobal] = useState<LycGlobal | null>(null);
   const [lycPosition, setLycPosition] = useState<LycPosition | null>(null);
   const [lycPnl, setLycPnl] = useState<LycPnl | null>(null);
+  const [pnlWindow, setPnlWindow] = useState<PnlWindow>("1D");
+  const [followInfo, setFollowInfo] = useState<FollowInfo | null>(null);
+  const [createdFirstTs, setCreatedFirstTs] = useState<number | null>(null);
 
   const targetAddress = profileAddress;
+  const userAddr = profileAddress?.toLowerCase() ?? null;
 
+  // Cheap on-chain reads: what the header and portfolio card show. Polled.
   const refresh = useCallback(async () => {
     if (!addresses || !targetAddress) {
       setCreated(null);
       setHoldings(null);
-      setClaimHistory([]);
-      setLycGlobal(null);
-      setLycPosition(null);
-      setLycPnl(null);
       return;
     }
     try {
       const collateralPriceUsd = await fetchCollateralPriceUsd(addresses.oracle);
       setCollateralPrice(collateralPriceUsd);
-      const [mine, held, lycG, lycP] = await Promise.all([
+      const [mine, held] = await Promise.all([
         fetchLaunchesByCreator(addresses, targetAddress),
         fetchHoldings(addresses, targetAddress),
-        fetchLycGlobal(addresses),
-        fetchLycPosition(addresses, targetAddress),
       ]);
       const rows = await Promise.all(
         mine.map(async (launch) => ({
@@ -101,14 +398,6 @@ export default function ProfileAddressPage() {
       );
       setCreated(rows);
       setHoldings(held);
-      setLycGlobal(lycG);
-      setLycPosition(lycP);
-      if (lycG) {
-        const pnl = await fetchLycPnl(addresses, targetAddress, lycG.nav);
-        setLycPnl(pnl);
-      }
-      const history = await fetchClaimHistory(mine, targetAddress, collateralPriceUsd);
-      setClaimHistory(history);
     } catch {
       // anvil down / stale addresses
     }
@@ -120,18 +409,99 @@ export default function ProfileAddressPage() {
     return () => clearInterval(id);
   }, [refresh]);
 
+  // Heavy event scans (per-launch claim logs, the LYC Transfer log from block 0) -- these were
+  // re-run on the 5s poll and buried the RPC. Claims only change when a claim lands, so they load
+  // once per address and after each claim; the LYC ledger loads on demand and refreshes on a slow
+  // interval only while its tab is open. The creator list is fetched here rather than read from
+  // `created` so this callback stays keyed on address only -- a fresh `created` array identity on
+  // every poll would otherwise re-trigger the scans.
+  const loadLedger = useCallback(async () => {
+    if (!addresses || !targetAddress) return;
+    fetchLaunchesByCreator(addresses, targetAddress)
+      .then((mine) => {
+        fetchClaimHistory(mine, targetAddress)
+          .then((history) => setClaimHistory(history))
+          .catch(() => {});
+        return mine;
+      })
+      .then(async (mine) => {
+        // "Account created on" comes from each launch's first-trade timestamp, which only the
+        // trade scan knows. Bounded to the launches this address created, once per address; the
+        // scan is incremental, so coins already scanned cost nothing.
+        let first: number | null = null;
+        for (const l of mine) {
+          try {
+            const price = await fetchLaunchCollateralPriceUsd(l.address);
+            const stats = await fetchLaunchStats(l.address, price, null);
+            if (stats.createdAt) first = first === null ? stats.createdAt : Math.min(first, stats.createdAt);
+          } catch {
+            // one unscannable coin should not hide the rest of the dates
+          }
+        }
+        setCreatedFirstTs(first);
+      })
+      .catch(() => {});
+    try {
+      const g = await fetchLycGlobal(addresses);
+      setLycGlobal(g);
+      const p = await fetchLycPosition(addresses, targetAddress);
+      setLycPosition(p);
+      const pnl = await fetchLycPnl(addresses, targetAddress, g.nav);
+      setLycPnl(pnl);
+    } catch {
+      // LYC reads are best-effort; tiles fall back to zeros
+    }
+  }, [addresses, targetAddress]);
+
+  useEffect(() => {
+    setClaimHistory(null);
+    setLycGlobal(null);
+    setLycPosition(null);
+    setLycPnl(null);
+    setCreatedFirstTs(null);
+  }, [targetAddress]);
+
+  useEffect(() => {
+    loadLedger();
+  }, [loadLedger]); // created resolving/changes re-triggers, which is when claims can differ
+
+  useEffect(() => {
+    if (activeTab !== "lyc") return;
+    loadLedger();
+    const id = setInterval(loadLedger, 15000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  // Follow counts. Identity is the address, so this works whether or not either side connected X.
+  const reloadFollows = useCallback(() => {
+    if (!profileAddress) return;
+    fetchFollowInfo(profileAddress, wallet.address ?? null)
+      .then(setFollowInfo)
+      .catch(() => {});
+  }, [profileAddress, wallet.address]);
+
+  useEffect(() => {
+    setFollowInfo(null);
+    reloadFollows();
+  }, [reloadFollows]);
+
   async function onClaim(launchAddress: string) {
     if (!isOwnProfile) return;
     setClaiming(launchAddress);
     try {
       await claimFees(launchAddress);
       await refresh();
+      loadLedger();
     } catch {
       // a claim with nothing to claim reverts
     } finally {
       setClaiming(null);
     }
   }
+
+  const book = usePositions(launches, holdings, userAddr);
+  const activity = useActivity(launches, userAddr);
 
   if (!profileAddress) {
     return (
@@ -150,311 +520,497 @@ export default function ProfileAddressPage() {
 
   const lifetimeFeesUsd = (created ?? []).reduce((sum, r) => sum + r.fees.lifetimeUsd, 0n);
   const holdingsValueUsd = (holdings ?? []).reduce((sum, h) => sum + h.valueUsd, 0n);
-  const holdingsPnlUsd = (holdings ?? []).reduce((sum, h) => sum + h.pnlUsd, 0n);
-  // For other profiles, we don't have wallet balances — show 0, the on-chain holdings are still fetched
-  const ethBalance = isOwnProfile && wallet.balances ? formatWad(wallet.balances.eth, 4) : "0";
+  const ethBalance = isOwnProfile && wallet.balances ? formatWad(wallet.balances.eth, 4) : null;
   const ethValueUsd = isOwnProfile && wallet.balances ? (wallet.balances.eth * collateralPrice) / 10n ** 18n : 0n;
 
-  // Compute realized PnL from trade history for the profile address
-  const userAddr = profileAddress.toLowerCase();
-  let realizedPnl = 0;
-  let buyVolume = 0;
-  for (const launch of launches) {
-    const trades = tradesFor(launch.address);
-    for (const t of trades) {
-      if (t.trader !== userAddr) continue;
-      if (t.type === "rebalance") continue;
-      if (t.isBuy) buyVolume += t.volumeUsd;
-      else realizedPnl += t.volumeUsd;
-    }
-  }
-  realizedPnl -= buyVolume;
+  const safeBook = book ?? EMPTY_BOOK;
+  const win = safeBook.windowPnl(pnlWindow);
+  const topTrades = safeBook.top;
 
   const h = hashOf(profileAddress);
   const color = PALETTE[h % PALETTE.length];
   const emoji = EMOJI[(h >>> 3) % EMOJI.length];
 
+  const lycValue = lycPosition && lycGlobal ? (lycPosition.balance * lycGlobal.nav) / WAD : 0n;
+  const createdTsList = [safeBook.firstActivityTs, createdFirstTs].filter((t): t is number => t !== null);
+  const createdDate = createdTsList.length
+    ? new Date(Math.min(...createdTsList)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    : null;
+
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_0.7fr]">
-      {/* Left Column */}
-      <div className="space-y-4">
-        {/* Profile Header */}
-        <div className="rounded-xl border border-border bg-card overflow-hidden">
-          <div className="h-32 bg-gradient-to-br from-green/20 via-accent/10 to-transparent relative">
-            <div className="absolute inset-0 opacity-20" style={{ backgroundImage: "radial-gradient(circle at 20% 50%, rgba(34,197,94,0.3) 0%, transparent 50%), radial-gradient(circle at 80% 50%, rgba(200,255,0,0.2) 0%, transparent 50%)" }} />
-          </div>
-          <div className="px-6 pb-6">
-            <div className="flex items-end gap-4 -mt-10">
-              {displayXProfile ? (
-                <img src={displayXProfile.profileImageUrl} alt={displayXProfile.name} className="h-20 w-20 shrink-0 rounded-2xl border-4 border-card object-cover" />
-              ) : (
-                <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl text-4xl border-4 border-card" style={{ backgroundColor: `${color}22`, border: `2px solid ${color}55` }}>
-                  {emoji}
-                </div>
-              )}
-              <div className="flex-1 pb-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  {displayXProfile ? (
-                    <>
-                      <h1 className="text-2xl font-bold text-foreground">{displayXProfile.name}</h1>
-                      <span className="text-sm text-muted">@{displayXProfile.username}</span>
-                    </>
-                  ) : (
-                    <h1 className="text-2xl font-bold text-foreground">trader</h1>
-                  )}
-                  {isOwnProfile && !displayXProfile && (
-                    <button onClick={xAuth.connect} className="text-xs text-accent hover:text-accent/80 transition-colors font-medium">
-                      Connect X
-                    </button>
-                  )}
-                </div>
-                {displayXProfile ? (
-                  <div className="flex items-center gap-4 text-sm text-muted mt-1">
-                    <a href={`https://x.com/${displayXProfile.username}`} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">
-                      @{displayXProfile.username}
-                    </a>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-4 text-sm text-muted mt-1">
-                    <span><span className="font-semibold text-foreground">0</span> Followers</span>
-                    <span><span className="font-semibold text-foreground">0</span> Following</span>
-                  </div>
-                )}
+    <div className="mx-auto max-w-5xl space-y-4">
+      {/* ── Identity header ── */}
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
+        <div className="h-24 bg-gradient-to-r from-green/15 via-accent/10 to-transparent" />
+        <div className="px-5 pb-5">
+          <div className="-mt-9 flex items-end justify-between gap-3">
+            {displayXProfile ? (
+              <img
+                src={displayXProfile.profileImageUrl}
+                alt={displayXProfile.name}
+                className="h-[72px] w-[72px] shrink-0 rounded-2xl border-4 border-card object-cover"
+              />
+            ) : (
+              <div
+                className="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-2xl border-4 border-card text-3xl"
+                style={{ backgroundColor: `${color}22` }}
+              >
+                {emoji}
               </div>
+            )}
+            <div className="mb-1 flex shrink-0 items-center gap-2">
+              {isOwnProfile && !displayXProfile ? (
+                <button
+                  onClick={xAuth.connect}
+                  className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:border-accent/40"
+                >
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                  </svg>
+                  Connect X
+                </button>
+              ) : null}
+              {!isOwnProfile ? (
+                <FollowButton
+                  target={profileAddress}
+                  viewerAddress={wallet.isConnected ? wallet.address ?? null : null}
+                  viewerFollows={followInfo?.viewerFollows ?? false}
+                  onChanged={reloadFollows}
+                />
+              ) : null}
             </div>
-            <div className="mt-4 flex items-center gap-2 text-sm">
-              <span className="font-mono text-muted">{shortAddress(profileAddress)}</span>
-              <button onClick={() => navigator.clipboard.writeText(profileAddress)} className="text-muted hover:text-foreground transition-colors">
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-              </button>
-              {!isOwnProfile && wallet.isConnected && (
-                <span className="ml-2 text-[11px] text-muted">Viewing as {shortAddress(wallet.address!)}</span>
-              )}
-            </div>
+          </div>
+
+          <div className="mt-3">
+            {displayXProfile ? (
+              <>
+                <h1 className="text-xl font-bold text-foreground">{displayXProfile.name}</h1>
+                <a
+                  href={`https://x.com/${displayXProfile.username}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-0.5 inline-block text-sm text-accent hover:underline"
+                >
+                  @{displayXProfile.username}
+                </a>
+              </>
+            ) : (
+              <h1 className="font-mono text-xl font-bold text-foreground">{shortAddress(profileAddress)}</h1>
+            )}
+          </div>
+
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-secondary">
+            <span>
+              <span className="font-semibold text-foreground">{followInfo?.followers ?? "—"}</span>{" "}
+              <span className="text-muted">Followers</span>
+            </span>
+            <span>
+              <span className="font-semibold text-foreground">{followInfo?.following ?? "—"}</span>{" "}
+              <span className="text-muted">Following</span>
+            </span>
+            <button
+              onClick={() => navigator.clipboard.writeText(profileAddress).catch(() => {})}
+              className="inline-flex items-center gap-1 font-mono text-xs text-muted transition-colors hover:text-foreground"
+              title="Copy address"
+            >
+              {shortAddress(profileAddress)}
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                />
+              </svg>
+            </button>
+            <AddressLink address={profileAddress} label="Explorer" className="text-xs text-muted transition-colors hover:text-foreground" />
+            {createdDate ? <span className="text-xs text-muted">Account created on {createdDate}</span> : null}
           </div>
         </div>
+      </div>
 
-        {/* Portfolio Value */}
-        <div className="rounded-xl border border-border bg-card p-6">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* ── PnL hero ── */}
+        <div className="rounded-xl border border-border bg-card p-5">
+          <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <div className="text-3xl font-bold text-foreground sm:text-4xl">{usd(holdingsValueUsd)}</div>
-              <div className="flex items-center gap-2 mt-1">
-                <span className={`text-sm font-semibold ${holdingsPnlUsd >= 0n ? "text-green" : "text-red"}`}>
-                  {holdingsPnlUsd >= 0n ? "+" : ""}{usd(holdingsPnlUsd)} ({holdingsValueUsd > 0n ? ((Number(holdingsPnlUsd) / Number(holdingsValueUsd)) * 100).toFixed(2) : "0.00"}%)
-                </span>
-                <span className="text-sm text-muted">{timeframe}</span>
+              <div className={`truncate font-mono text-4xl font-bold tracking-tight ${safeBook.totalProfit >= 0 ? "text-foreground" : "text-red"}`}>
+                {usdNum(safeBook.totalProfit)}
               </div>
+              <div className="mt-1 text-[10px] uppercase tracking-wider text-muted">Profit</div>
             </div>
-            <div className="flex items-center gap-1 bg-surface rounded-lg p-0.5">
-              {(["1D", "1W", "1M"] as const).map((tf) => (
-                <button key={tf} onClick={() => setTimeframe(tf)} className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${timeframe === tf ? "bg-card text-foreground" : "text-muted hover:text-foreground"}`}>
-                  {tf}
+            <div className="flex shrink-0 gap-1 rounded-lg border border-border bg-surface p-1">
+              {(Object.keys(WINDOW_MS) as PnlWindow[]).map((w) => (
+                <button
+                  key={w}
+                  onClick={() => setPnlWindow(w)}
+                  className={`rounded-md px-2.5 py-1 font-mono text-xs font-semibold transition-colors ${
+                    pnlWindow === w ? "bg-accent text-accent-ink" : "text-muted hover:text-foreground"
+                  }`}
+                >
+                  {w}
                 </button>
               ))}
             </div>
           </div>
-          <div className="mt-4 flex items-center gap-3">
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-accent/20 text-[10px] text-accent">$</span>
-              <span className="text-sm font-medium text-foreground">{ethBalance} ETH</span>
-              <span className="text-sm text-muted">≈ {usd(ethValueUsd)}</span>
-            </div>
+
+          <div className={`mt-3 font-mono text-sm font-semibold ${win.usd >= 0 ? "text-green" : "text-red"}`}>
+            {win.usd >= 0 ? "+" : ""}
+            {usdNum(win.usd)}
+            {win.pct !== null ? ` (${win.pct >= 0 ? "+" : ""}${win.pct.toFixed(2)}%)` : ""}{" "}
+            <span className="font-sans font-normal text-muted">{pnlWindow}</span>
           </div>
-          <div className="grid grid-cols-3 gap-3 mt-6 sm:gap-4">
-            <div>
-              <div className="text-[10px] uppercase tracking-wide text-muted">Realized</div>
-              <div className={`mt-1 font-mono text-sm sm:text-lg ${realizedPnl >= 0 ? "text-green" : "text-red"}`}>{usd(BigInt(Math.round(realizedPnl * 1e18)))}</div>
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wide text-muted">Unrealized</div>
-              <div className={`mt-1 font-mono text-sm sm:text-lg ${holdingsPnlUsd >= 0n ? "text-green" : "text-red"}`}>{usd(holdingsPnlUsd)}</div>
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wide text-muted">Buy Volume</div>
-              <div className="mt-1 font-mono text-sm text-foreground sm:text-lg">{usd(BigInt(Math.round(buyVolume * 1e18)))}</div>
-            </div>
+
+          <div className="mt-1 text-xs text-muted">
+            Holdings ≈ <span className="font-mono text-foreground">{usd(holdingsValueUsd)}</span>
+            {ethBalance ? (
+              <>
+                {" · "}
+                <span className="font-mono text-foreground">{ethBalance}</span> ETH (≈ {usd(ethValueUsd)})
+              </>
+            ) : null}
+          </div>
+
+          <div className="mt-4 grid grid-cols-3 gap-px overflow-hidden rounded-lg bg-border">
+            <StatTile label="Realized PnL" value={usdNum(safeBook.realizedUsd)} tone={safeBook.realizedUsd >= 0 ? "green" : "red"} />
+            <StatTile label="Unrealized PnL" value={usdNum(safeBook.unrealizedUsd)} tone={safeBook.unrealizedUsd >= 0 ? "green" : "red"} />
+            <StatTile label="Buy volume" value={usdNum(safeBook.buyVolume)} />
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex flex-wrap items-center gap-2">
-          {(["open", "closed", "activity", "lyc"] as const).map((tab) => (
-            <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === tab ? "bg-accent text-accent-ink" : "bg-surface text-muted hover:text-foreground"}`}>
-              {tab === "lyc" ? "LYC" : tab.charAt(0).toUpperCase() + tab.slice(1)}
+        {/* ── Top trades ── */}
+        <div className="rounded-xl border border-border bg-card p-5">
+          <h2 className="text-sm font-semibold text-foreground">Top trades</h2>
+          {topTrades === null ? (
+            <div className="mt-3 space-y-2">
+              <Skeleton className="h-14 w-full" />
+              <Skeleton className="h-14 w-full" />
+              <Skeleton className="h-14 w-full" />
+            </div>
+          ) : topTrades.length === 0 ? (
+            <div className="mt-3 flex flex-col items-center gap-1 rounded-lg border border-dashed border-border px-6 py-8 text-center">
+              <p className="text-sm font-medium text-secondary">No trades yet</p>
+              <p className="text-xs text-muted">The most profitable positions will rank up here.</p>
+            </div>
+          ) : (
+            <div className="mt-1 divide-y divide-border">
+              {topTrades.map((c, i) => (
+                <button
+                  key={c.launch.address}
+                  onClick={() => router.push(`/coin/${c.launch.address}`)}
+                  className="flex w-full items-center gap-3 py-3 text-left transition-colors hover:bg-hover/40"
+                >
+                  <span className="w-6 shrink-0 font-mono text-xs text-muted">#{i + 1}</span>
+                  <CoinAvatar address={c.launch.address} size={36} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-semibold text-foreground">
+                      ${c.launch.symbol} <span className="text-xs font-normal text-muted">{c.launch.name}</span>
+                    </div>
+                    <div className="truncate font-mono text-xs text-muted">
+                      Spent {compactNum(c.boughtUsd)} · Avg entry {compactNum(c.entryPriceUsd * 1e9)} MC / Now{" "}
+                      {usdCompact(c.launch.marketCapUsd)} MC
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <div className="text-[10px] uppercase tracking-wider text-muted">Position</div>
+                    <div className={`text-xs font-semibold ${c.held ? "text-green" : "text-muted"}`}>{c.held ? "Open" : "Closed"}</div>
+                  </div>
+                  <div className="w-24 shrink-0 text-right">
+                    <div className="text-[10px] uppercase tracking-wider text-muted">Profit</div>
+                    <div className={`truncate font-mono text-sm font-semibold ${c.profit >= 0 ? "text-green" : "text-red"}`}>
+                      {c.profit >= 0 ? "+" : "-"}
+                      {compactNum(c.profit)}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Tabs ── */}
+      <div className="rounded-xl border border-border bg-card">
+        <div className="flex gap-5 overflow-x-auto border-b border-border px-4">
+          {TABS.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`-mb-px shrink-0 border-b-2 py-3 text-sm font-semibold capitalize transition-colors ${
+                activeTab === tab.key ? "border-accent text-foreground" : "border-transparent text-muted hover:text-foreground"
+              }`}
+            >
+              {tab.label}
             </button>
           ))}
         </div>
 
-        {/* Positions List */}
-        <div className="space-y-2">
-          {holdings === null ? (
-            <div className="overflow-hidden rounded-xl border border-border bg-card">
-              <div className="space-y-3 p-4">
-                {Array.from({ length: 3 }, (_, i) => (
-                  <Skeleton key={i} className="h-8 w-full" />
-                ))}
-              </div>
-            </div>
-          ) : holdings.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted">No open positions</div>
-          ) : (
-            holdings.map((h) => {
-              const hc = hashOf(h.address);
-              const hColor = PALETTE[hc % PALETTE.length];
-              const hEmoji = EMOJI[(hc >>> 3) % EMOJI.length];
-              return (
-                <button key={h.address} onClick={() => router.push(`/coin/${h.address}`)} className="w-full flex items-center justify-between rounded-xl border border-border bg-card p-4 text-left transition-colors hover:border-accent/40 hover:bg-hover">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg" style={{ backgroundColor: `${hColor}22`, border: `1px solid ${hColor}55` }}>
-                      {hEmoji}
-                    </div>
-                    <div>
-                      <div className="font-semibold text-foreground">${h.symbol}</div>
-                      <div className="text-xs text-muted">{h.name}</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-mono text-sm text-foreground">{usd(h.valueUsd)}</div>
-                    <div className={`font-mono text-xs ${h.pnlUsd >= 0n ? "text-green" : "text-red"}`}>
-                      {h.pnlUsd >= 0n ? "+" : ""}{usd(h.pnlUsd)}
-                    </div>
-                  </div>
-                </button>
-              );
-            })
-          )}
+        <div className="p-4">
+          {activeTab === "open" && <OpenPositions rows={book?.coins.filter((c) => c.held) ?? null} onOpen={(a) => router.push(`/coin/${a}`)} />}
+          {activeTab === "closed" && <ClosedPositions rows={book?.closed ?? null} onOpen={(a) => router.push(`/coin/${a}`)} />}
+          {activeTab === "activity" && <ActivityList rows={activity} />}
+          {activeTab === "lyc" && <LycPanel global={lycGlobal} position={lycPosition} pnl={lycPnl} />}
         </div>
+      </div>
 
-        {/* Created Coins */}
-        {created && created.length > 0 && (
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-foreground">Coins launched <span className="text-muted">({created.length})</span></h2>
-              <div className="text-right">
-                <div className="text-[10px] uppercase tracking-wide text-muted">Total Lifetime Fees</div>
-                <div className="font-mono text-sm font-semibold text-foreground">{usd(lifetimeFeesUsd)}</div>
-              </div>
+      {/* ── Created coins + fee claims ── */}
+      {created !== null && created.length > 0 ? (
+        <div className="rounded-xl border border-border bg-card p-5">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-sm font-semibold text-foreground">
+              Coins launched <span className="font-normal text-muted">({created.length})</span>
+            </h2>
+            <div className="text-right">
+              <span className="text-[10px] uppercase tracking-wider text-muted">Lifetime fees </span>
+              <span className="font-mono text-sm font-semibold text-foreground">{usd(lifetimeFeesUsd)}</span>
             </div>
-            <div className="space-y-2">
-              {created.map(({ launch, fees }) => (
-                <div key={launch.address} className="rounded-xl border border-border bg-card p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <button onClick={() => router.push(`/coin/${launch.address}`)} className="text-left">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-foreground">{launch.name}</span>
-                        <span className="font-mono text-xs text-muted">${launch.symbol}</span>
-                        {launch.graduated ? (
-                          <span className="rounded-full bg-green/15 px-1.5 py-0.5 text-[10px] font-semibold text-green">LIVE</span>
-                        ) : (
-                          <span className="font-mono text-[10px] text-muted">{launch.pctToGraduation.toFixed(1)}%</span>
-                        )}
-                      </div>
-                      <div className="mt-0.5 font-mono text-xs text-muted"><PriceLabel value={launch.priceUsd} /> · MC {usdCompact(launch.marketCapUsd)}</div>
-                    </button>
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <div className="text-[10px] uppercase tracking-wide text-muted">Lifetime</div>
-                        <div className="font-mono text-xs text-muted">{usd(fees.lifetimeUsd)}</div>
-                      </div>
-                      {isOwnProfile ? (
-                        fees.inHfyc ? (
-                          <div className="text-right">
-                            <div className="text-[10px] uppercase tracking-wide text-muted">Fee denom</div>
-                            <div className="font-mono text-sm font-semibold text-foreground">LYC</div>
-                            <div className="text-[10px] text-muted">minted at harvest, withdraw anytime</div>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="text-right">
-                              <div className="text-[10px] uppercase tracking-wide text-muted">Claimable</div>
-                              <div className="font-mono text-sm font-semibold text-foreground">{usd(fees.claimableUsd)}</div>
-                            </div>
-                            <button onClick={() => onClaim(launch.address)} disabled={fees.claimableCollateral === 0n || claiming === launch.address} className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-40">
-                              {claiming === launch.address ? "..." : "Claim"}
-                            </button>
-                          </>
-                        )
+          </div>
+
+          <div className="mt-3 divide-y divide-border">
+            {created.map(({ launch, fees }) => (
+              <div key={launch.address} className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
+                <button onClick={() => router.push(`/coin/${launch.address}`)} className="flex min-w-0 items-center gap-3 text-left">
+                  <CoinAvatar address={launch.address} size={36} />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate font-semibold text-foreground">${launch.symbol}</span>
+                      {launch.graduated ? (
+                        <span className="rounded-full bg-green/15 px-1.5 py-0.5 text-[10px] font-semibold text-green">LIVE</span>
                       ) : (
-                        <div className="text-right">
-                          <div className="text-[10px] uppercase tracking-wide text-muted">Fees</div>
-                          <div className="font-mono text-xs text-muted">{usd(fees.lifetimeUsd)}</div>
-                        </div>
+                        <span className="font-mono text-[10px] text-muted">{launch.pctToGraduation.toFixed(1)}% to grad</span>
                       )}
                     </div>
+                    <div className="mt-0.5 font-mono text-xs text-muted">
+                      <PriceLabel value={launch.priceUsd} /> · MC {usdCompact(launch.marketCapUsd)}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-      </div>
+                </button>
 
-      {/* Right Column */}
-      <div className="space-y-4">
-        <div className="rounded-xl border border-border bg-card p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3 min-w-0">
-              {displayXProfile?.profileImageUrl ? (
-                <img src={displayXProfile.profileImageUrl} alt={displayXProfile.username} className="h-8 w-8 rounded-full object-cover" />
-              ) : (
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent/20">
-                  <svg className="w-4 h-4 text-accent" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                  </svg>
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <div className="text-[10px] uppercase tracking-wider text-muted">Fees earned</div>
+                    <div className="font-mono text-sm font-semibold text-foreground">{usd(fees.lifetimeUsd)}</div>
+                  </div>
+                  {isOwnProfile &&
+                    (fees.inHfyc ? (
+                      <span className="text-xs text-muted" title="Creator fees are accruing in LYC — minted at harvest, withdraw anytime">
+                        Paid in LYC
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => onClaim(launch.address)}
+                        disabled={fees.claimableCollateral === 0n || claiming === launch.address}
+                        className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-40"
+                      >
+                        {claiming === launch.address ? "Claiming…" : `Claim ${usd(fees.claimableUsd)}`}
+                      </button>
+                    ))}
                 </div>
-              )}
-              <div className="min-w-0">
-                <div className="text-[10px] uppercase tracking-wide text-muted">X (Twitter)</div>
-                <div className="text-sm font-medium text-foreground truncate">{displayXProfile ? `@${displayXProfile.username}` : "Not linked"}</div>
+              </div>
+            ))}
+          </div>
+
+          {claimHistory !== null && claimHistory.length > 0 ? (
+            <div className="mt-4 border-t border-border pt-4">
+              <div className="text-[10px] uppercase tracking-wider text-muted">Fee claims</div>
+              <div className="mt-2 space-y-1.5">
+                {claimHistory.map((c, i) => {
+                  const launch = created.find((r) => r.launch.address.toLowerCase() === c.token.toLowerCase());
+                  return (
+                    <div key={`${c.tx}-${i}`} className="flex items-center justify-between gap-3 text-xs">
+                      <span className="text-muted">
+                        {launch ? `$${launch.launch.symbol}` : shortAddress(c.token)} · <span className="font-mono text-foreground">{usd(c.amountUsd)}</span>
+                      </span>
+                      <span className="flex items-center gap-2 text-muted">
+                        {timeAgo(c.timestamp)} ago <TxLink hash={c.tx} className="font-mono text-xs text-accent hover:underline" />
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
-            {isOwnProfile ? (
-              displayXProfile ? (
-                <button onClick={() => xAuth.disconnect()} className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted hover:text-foreground transition-colors shrink-0">
-                  Disconnect
-                </button>
-              ) : (
-                <button onClick={xAuth.connect} className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-ink hover:opacity-90 transition-opacity shrink-0">
-                  Connect X
-                </button>
-              )
-            ) : null}
-          </div>
+          ) : null}
         </div>
+      ) : null}
+    </div>
+  );
+}
 
-        <div className="rounded-xl border border-border bg-card p-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent/20">
-              <svg className="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 9m18 0V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3" />
-              </svg>
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wide text-muted">Profile</div>
-              <div className="text-sm font-medium text-foreground">{isOwnProfile ? "Your profile" : "Viewing"}</div>
+function StatTile({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "green" | "red" }) {
+  return (
+    <div className="bg-surface px-3 py-2.5">
+      <div className="text-[10px] uppercase tracking-wider text-muted">{label}</div>
+      <div className={`mt-0.5 truncate font-mono text-sm font-semibold ${tone === "green" ? "text-green" : tone === "red" ? "text-red" : "text-foreground"}`}>
+        {value}
+      </div>
+      {sub ? <div className="text-[10px] text-muted">{sub}</div> : null}
+    </div>
+  );
+}
+
+function PanelEmpty({ title, hint, cta }: { title: string; hint?: string; cta?: React.ReactNode }) {
+  return (
+    <div className="flex flex-col items-center gap-1 rounded-lg border border-dashed border-border px-6 py-10 text-center">
+      <p className="text-sm font-medium text-secondary">{title}</p>
+      {hint ? <p className="text-xs text-muted">{hint}</p> : null}
+      {cta}
+    </div>
+  );
+}
+
+function RowsSkeleton({ rows = 3 }: { rows?: number }) {
+  return (
+    <div className="space-y-2">
+      {Array.from({ length: rows }, (_, i) => (
+        <Skeleton key={i} className="h-12 w-full" />
+      ))}
+    </div>
+  );
+}
+
+function OpenPositions({ rows, onOpen }: { rows: CoinPosition[] | null; onOpen: (a: string) => void }) {
+  if (rows === null) return <RowsSkeleton />;
+  if (rows.length === 0) return <PanelEmpty title="No open positions" hint="Coins this address holds will show up here." />;
+  return (
+    <div className="space-y-2">
+      {rows.map((c) => (
+        <button
+          key={c.launch.address}
+          onClick={() => onOpen(c.launch.address)}
+          className="flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-surface/50 p-3 text-left transition-colors hover:border-accent/40 hover:bg-hover"
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            <CoinAvatar address={c.launch.address} />
+            <div className="min-w-0">
+              <div className="truncate font-semibold text-foreground">${c.launch.symbol}</div>
+              <div className="truncate text-xs text-muted">{c.launch.name}</div>
             </div>
           </div>
-          <div className="flex items-center gap-4 mt-4 pt-4 border-t border-border">
-            <button onClick={() => router.push("/")} className="flex items-center gap-2 text-sm text-muted hover:text-foreground transition-colors">
-              Explore coins
-            </button>
-            {isOwnProfile && wallet.isConnected ? (
-              <button onClick={() => disconnect()} className="flex items-center gap-2 text-sm text-muted hover:text-foreground transition-colors">
-                Disconnect
-              </button>
-            ) : !wallet.isConnected ? (
-              <ConnectWalletButton className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-ink" />
-            ) : (
-              <button onClick={() => router.push(`/profile/${wallet.address}`)} className="flex items-center gap-2 text-sm text-accent hover:text-accent-dim transition-colors">
-                View your profile
-              </button>
-            )}
+          <div className="shrink-0 text-right">
+            <div className="font-mono text-sm text-foreground">{usdNum(c.valueNow)}</div>
+            <div className={`font-mono text-xs ${c.unrealizedUsd >= 0 ? "text-green" : "text-red"}`}>
+              {c.unrealizedUsd >= 0 ? "+" : ""}
+              {usdNum(c.unrealizedUsd)}
+            </div>
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ClosedPositions({ rows, onOpen }: { rows: CoinPosition[] | null; onOpen: (a: string) => void }) {
+  if (rows === null) return <RowsSkeleton />;
+  if (rows.length === 0) return <PanelEmpty title="No closed positions" hint="Coins this address bought and fully sold will show up here." />;
+  return (
+    <div className="space-y-2">
+      {rows.map((r) => (
+        <button
+          key={r.launch.address}
+          onClick={() => onOpen(r.launch.address)}
+          className="flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-surface/50 p-3 text-left transition-colors hover:border-accent/40 hover:bg-hover"
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            <CoinAvatar address={r.launch.address} />
+            <div className="min-w-0">
+              <div className="truncate font-semibold text-foreground">${r.launch.symbol}</div>
+              <div className="text-xs text-muted">
+                {r.trades} trades · last {timeAgo(r.lastTs)} ago
+              </div>
+            </div>
+          </div>
+          <div className="shrink-0 text-right">
+            <div className={`font-mono text-sm font-semibold ${r.realizedUsd >= 0 ? "text-green" : "text-red"}`}>
+              {r.realizedUsd >= 0 ? "+" : ""}
+              {usdNum(r.realizedUsd)}
+            </div>
+            <div className="font-mono text-xs text-muted">bought {compactNum(r.boughtUsd)}</div>
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ActivityList({ rows }: { rows: ReturnType<typeof useActivity> }) {
+  if (rows === null) return <RowsSkeleton />;
+  if (rows.length === 0) return <PanelEmpty title="No trades yet" hint="Buys and sells across every coin will show up here." />;
+  return (
+    <div className="divide-y divide-border">
+      {rows.map((r, i) => (
+        <div key={`${r.tx}-${i}`} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+          <div className="flex min-w-0 items-center gap-3">
+            <CoinAvatar address={r.launch.address} size={32} />
+            <div className="min-w-0">
+              <span className="truncate text-sm font-semibold text-foreground">${r.launch.symbol}</span>
+              <span
+                className={`ml-2 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                  r.isBuy ? "bg-green/15 text-green" : "bg-red/15 text-red"
+                }`}
+              >
+                {r.isBuy ? "Buy" : "Sell"}
+              </span>
+              <div className="text-xs text-muted">{timeAgo(r.ts)} ago</div>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-3 text-right">
+            <div>
+              <div className="font-mono text-sm text-foreground">{usd(BigInt(Math.round(r.volumeUsd * 1e18)))}</div>
+              <div className="font-mono text-xs text-muted">{r.tokenAmount.toLocaleString("en-US", { maximumFractionDigits: 2 })} {r.launch.symbol}</div>
+            </div>
+            <TxLink hash={r.tx} />
           </div>
         </div>
+      ))}
+    </div>
+  );
+}
+
+function LycPanel({ global: g, position, pnl }: { global: LycGlobal | null; position: LycPosition | null; pnl: LycPnl | null }) {
+  if (!g || !position) return <RowsSkeleton rows={2} />;
+  if (position.balance === 0n && (pnl === null || pnl.history.length === 0)) {
+    return (
+      <PanelEmpty
+        title="No LYC activity yet"
+        hint="Mint LYC on the Earn page to start earning funding from every leveraged pool."
+      />
+    );
+  }
+  const value = (position.balance * g.nav) / WAD;
+  const history = [...(pnl?.history ?? [])].sort((a, b) => b.timestamp - a.timestamp);
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg bg-border sm:grid-cols-4">
+        <StatTile label="LYC balance" value={formatWad(position.balance, 4)} sub={`≈ ${usd(value)}`} />
+        <StatTile label="Unlocked" value={formatWad(position.unlocked, 4)} />
+        <StatTile label="Realized PnL" value={usd(pnl?.realizedPnl ?? 0n)} tone={(pnl?.realizedPnl ?? 0n) >= 0n ? "green" : "red"} />
+        <StatTile label="Unrealized PnL" value={usd(pnl?.unrealizedPnl ?? 0n)} tone={(pnl?.unrealizedPnl ?? 0n) >= 0n ? "green" : "red"} />
       </div>
+
+      {history.length === 0 ? (
+        <PanelEmpty title="No LYC transactions" hint="Mints and redeems of LYC will show up here." />
+      ) : (
+        <div className="divide-y divide-border">
+          {history.map((t: LycTx, i) => (
+            <div key={`${t.txHash}-${i}`} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+              <div className="min-w-0">
+                <span
+                  className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                    t.type === "mint" ? "bg-green/15 text-green" : "bg-red/15 text-red"
+                  }`}
+                >
+                  {t.type}
+                </span>
+                <span className="ml-2 text-sm font-semibold text-foreground">{formatWad(t.shares, 4)} LYC</span>
+                <div className="text-xs text-muted">{timeAgo(t.timestamp)} ago</div>
+              </div>
+              <div className="flex shrink-0 items-center gap-3 text-right">
+                <div className="font-mono text-sm text-foreground">≈ {usd((t.shares * t.navAtTime) / WAD)}</div>
+                <TxLink hash={t.txHash} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

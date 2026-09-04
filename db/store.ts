@@ -532,3 +532,43 @@ export async function listTokenMetadata(launches: string[]): Promise<Record<stri
   }
   return out;
 }
+
+// ---- follows: the on-platform social graph --------------------------------------------------
+// Identity is the wallet address (identity != X account), so follows work for everyone.
+
+export type FollowCounts = { followers: number; following: number };
+
+export async function followCounts(target: string): Promise<FollowCounts> {
+  await ensureSchema();
+  const rows = await query<{ followers: string; following: string }>(
+    `SELECT
+       (SELECT count(*) FROM follows WHERE target = $1)   AS followers,
+       (SELECT count(*) FROM follows WHERE follower = $1) AS following`,
+    [norm(target)],
+  );
+  const r = rows[0];
+  return { followers: Number(r?.followers ?? 0), following: Number(r?.following ?? 0) };
+}
+
+export async function isFollowing(follower: string, target: string): Promise<boolean> {
+  await ensureSchema();
+  const rows = await query<{ follower: string }>(
+    `SELECT follower FROM follows WHERE follower = $1 AND target = $2 LIMIT 1`,
+    [norm(follower), norm(target)],
+  );
+  return rows.length > 0;
+}
+
+export async function addFollow(follower: string, target: string, t: number): Promise<void> {
+  await ensureSchema();
+  await query(
+    `INSERT INTO follows (follower, target, created_at) VALUES ($1,$2,$3)
+     ON CONFLICT (follower, target) DO NOTHING`,
+    [norm(follower), norm(target), t],
+  );
+}
+
+export async function removeFollow(follower: string, target: string): Promise<void> {
+  await ensureSchema();
+  await query(`DELETE FROM follows WHERE follower = $1 AND target = $2`, [norm(follower), norm(target)]);
+}

@@ -20,6 +20,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Levera - First leveraged memecoin launchpad",
     description: "Leveraged memecoin launchpad",
+    url: "/",
     images: [{ url: "/og-image.png", width: 800, height: 400 }],
   },
   twitter: {

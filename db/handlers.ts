@@ -1,14 +1,18 @@
 import {
+  addFollow,
   applyTrade,
   deleteXProfile,
+  followCounts,
   insertPricePoints,
   insertRebalance,
+  isFollowing,
   listLedger,
   listLedgerByFactory,
   listNavSamples,
   listPricePoints,
   listRebalances,
   listXProfiles,
+  removeFollow,
   upsertNavSample,
   upsertXProfile,
   wipeAllSessionData,
@@ -169,4 +173,30 @@ export async function handleStoreDelete(req: Request): Promise<Response> {
   if (factory) await wipeFactory(factory);
   else await wipeAllSessionData();
   return json({ ok: true });
+}
+
+// ---- follows ---------------------------------------------------------------------------------
+
+const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+
+export async function handleFollowsGet(req: Request): Promise<Response> {
+  const url = new URL(req.url);
+  const target = (url.searchParams.get("address") ?? "").trim();
+  const viewer = (url.searchParams.get("viewer") ?? "").trim();
+  if (!ADDRESS_RE.test(target)) return json({ error: "invalid address" }, 400);
+  const counts = await followCounts(target);
+  const viewerFollows = ADDRESS_RE.test(viewer) ? await isFollowing(viewer, target) : false;
+  return json({ ...counts, viewerFollows });
+}
+
+/// The DB side of a follow/unfollow. The route authenticates `follower` with a wallet signature
+/// before calling this -- these functions deliberately trust their arguments, the way every other
+/// handler here trusts its body.
+export async function handleFollowsMutate(
+  follower: string,
+  target: string,
+  action: "follow" | "unfollow",
+): Promise<void> {
+  if (action === "follow") await addFollow(follower, target, Date.now());
+  else await removeFollow(follower, target);
 }

@@ -36,13 +36,13 @@
   "seededPrices": {
     "ethUsd": "2526.57",
     "usdgUsd": "1.00015429",
-    "cbbtcUsd": "80891.4700188"
+    "cbbtcUsd": "81329.69287419"
   },
-  "seededAt": "2026-09-04T10:35:39.129Z",
-  "updatedAt": 1788518139134,
+  "seededAt": "2026-09-04T11:49:54.831Z",
+  "updatedAt": 1788522594837,
   "seededSources": {
-    "ethUsd": "live (4385s old)",
-    "usdgUsd": "live (68744s old)",
-    "cbbtcUsd": "live (1131s old)"
+    "ethUsd": "live (8838s old)",
+    "usdgUsd": "live (73197s old)",
+    "cbbtcUsd": "live (1293s old)"
   }
 }

@@ -139,3 +139,16 @@ CREATE TABLE IF NOT EXISTS token_metadata (
   description text,
   created_at bigint NOT NULL
 );
+
+-- On-platform social graph: wallet -> wallet follows. Deliberately independent of x_profiles --
+-- identity here is the address, not the X account, so a wallet that never connected Twitter can
+-- still follow and be followed.
+CREATE TABLE IF NOT EXISTS follows (
+  follower   text NOT NULL,
+  target     text NOT NULL,
+  created_at bigint NOT NULL,
+  PRIMARY KEY (follower, target)
+);
+
+CREATE INDEX IF NOT EXISTS follows_target   ON follows (target);
+CREATE INDEX IF NOT EXISTS follows_follower ON follows (follower);
