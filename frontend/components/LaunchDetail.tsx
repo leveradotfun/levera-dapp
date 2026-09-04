@@ -7,6 +7,7 @@ import { useWallet } from "@/lib/wallet";
 import ConnectWalletButton from "@/components/ConnectWalletButton";
 import { usePriceHistory, computePeriodChanges } from "@/lib/priceHistory";
 import { useTradeHistory } from "@/lib/trades";
+import { fetchHolderCount } from "@/lib/launchStats";
 import dynamic from "next/dynamic";
 import { SkeletonChart, SkeletonRows } from "@/components/Skeleton";
 
@@ -88,12 +89,32 @@ export default function LaunchDetail({
 }) {
   const priceHistory = usePriceHistory(launch.address, addresses?.oracle);
   const { trades, loading: tradesLoading, refresh } = useTradeHistory(launch.address, addresses);
+  // Real holder count: everyone who ever received a transfer of this coin and still holds a
+  // nonzero balance, not "unique buyers ∪ sellers in the last 24h" (see fetchHolderCount's own
+  // comment for why that undercounts long-term holders and overcounts anyone who fully exited).
+  const [holderCount, setHolderCount] = useState<number | null>(null);
+  useEffect(() => {
+    let stopped = false;
+    fetchHolderCount(launch.address, [launch.address, launch.amm])
+      .then((n) => {
+        if (!stopped) setHolderCount(n);
+      })
+      .catch(() => {});
+    return () => {
+      stopped = true;
+    };
+    // Re-derive whenever the trade log grows -- a new trade means the holder set may have changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [launch.address, launch.amm, trades.length]);
   const [amount, setAmount] = useState("0.5");
   const [side, setSide] = useState<"buy" | "sell">("buy");
-  // "ETH" here means "the launch's quote asset" — for a cbBTC-quoted coin that is cbBTC, and the
-  // label follows the coin. USDG is the second leg: swapped to the quote through the launch's own
-  // router at fill time.
-  const [payToken, setPayToken] = useState<"ETH" | "USDG">("ETH");
+  // "ETH" here means "the launch's quote asset, paid natively" — for a cbBTC-quoted coin that is
+  // plain cbBTC (there is no native cbBTC, so this is its only quote tab), for a WETH-quoted coin
+  // it goes through the QuoteZap so a buyer never needs to hold WETH. "WETH" is only offered for a
+  // WETH-quoted coin, for someone who already holds WETH and would rather spend it directly than
+  // wrap-then-buy. USDG is the second leg: swapped to the quote through the launch's own router at
+  // fill time.
+  const [payToken, setPayToken] = useState<"ETH" | "WETH" | "USDG">("ETH");
   const [quoteTokenBalance, setQuoteTokenBalance] = useState<bigint>(0n);
   const [quote, setQuote] = useState<bigint | null>(null);
   const [busy, setBusy] = useState(false);
@@ -201,10 +222,18 @@ export default function LaunchDetail({
   const wrapsNative = !!addresses && !!quoteInfo && quoteInfo.token.toLowerCase() === addresses.weth.toLowerCase();
   const quoteSymbol = wrapsNative ? "ETH" : quoteInfo?.symbol ?? "quote";
   const quoteDecimals = quoteInfo?.decimals ?? 18;
-  const paySymbol = payToken === "USDG" ? "USDG" : quoteSymbol;
-  // What a buy actually spends from: native gas for WETH coins, the quote ERC-20 for everything
-  // else, USDG when paying in cash.
-  const buyMax = payToken === "USDG" ? usdgBalance : wrapsNative ? spendableEth(ethBalance) : quoteTokenBalance;
+  const paySymbol = payToken === "USDG" ? "USDG" : payToken === "WETH" ? "WETH" : quoteSymbol;
+  // What a buy actually spends from: native gas for the "ETH" tab on a WETH coin, the wallet's own
+  // WETH ERC-20 for the "WETH" tab, the quote ERC-20 for everything else (cbBTC), USDG when paying
+  // in cash.
+  const buyMax =
+    payToken === "USDG"
+      ? usdgBalance
+      : payToken === "WETH"
+        ? wallet.balances?.weth ?? 0n
+        : wrapsNative
+          ? spendableEth(ethBalance)
+          : quoteTokenBalance;
   const fmtPay = (v: bigint) => ethers.formatUnits(v, payToken === "USDG" ? 18 : quoteDecimals);
   // Quote-amount formatter with the coin's own decimals: formatWad assumes 18 and printed 0.00
   // for every cbBTC figure on this page.
@@ -276,12 +305,24 @@ export default function LaunchDetail({
       return `0 ${launch.symbol}`;
     }
   })();
-  const totalTvlUsdWithTokens = (() => {
+  // Liquidity, matching how every AMM platform counts it: the value of both sides of the book a
+  // trader could actually exit into. junior's residual (tvlUsd - seniorUsd -- senior's claim isn't
+  // junior's liquidity, it's LYC's) plus the memecoin's own reserve, priced. For a 1x coin
+  // seniorUsd is always zero, so this is just tvlUsd + token reserve -- the same formula, no
+  // special case needed.
+  //
+  // This is mathematically the ETH-terms breakdown "juniorETH (reserveEth) + (vaultEth -
+  // seniorClaimEth) + tokenReserveEth" collapsed to one USD expression: reserveEth + vaultEth -
+  // seniorClaimEth *is* memeNAV in ETH terms (poolEth - seniorClaimEth), so tvlUsd - seniorUsd
+  // already nets in any vault excess from collateral appreciation -- no separate term needed.
+  const liquidityUsd = (() => {
     try {
       const tvl = BigInt(launch.tvlUsd as unknown as string);
+      const senior = BigInt(launch.seniorUsd as unknown as string);
       const rt = BigInt(launch.reserveToken as unknown as string);
       const pu = BigInt(launch.priceUsd as unknown as string);
-      return tvl + (rt * pu) / WAD;
+      const junior = tvl > senior ? tvl - senior : 0n;
+      return junior + (rt * pu) / WAD;
     } catch {
       return launch.tvlUsd as unknown as bigint;
     }
@@ -422,9 +463,7 @@ export default function LaunchDetail({
         }
         const minTokensOut = (q * (10000n - BigInt(slippageBps))) / 10000n;
         await withTimeout(buy(addresses, launch.address, payToken, parsed, minTokensOut), TX_TIMEOUT_MS, "Buy");
-        toastSuccess(
-          `Bought ${formatWad(q, 0)} ${launch.symbol} for ${fmtPay(parsed)} ${paySymbol}`
-        );
+        toastSuccess("Swap confirmed", `${fmtPay(parsed)} ${paySymbol} → ${formatWad(q, 0)} ${launch.symbol}`);
       } else {
         // Clamp to the live balance rather than whatever is in the box: the balance can move
         // between typing and submitting (the autopilot trades the same coins), and selling more
@@ -437,7 +476,7 @@ export default function LaunchDetail({
         const expectedOut = await quoteSell(launch.address, amt);
         const minOut = (expectedOut * (10000n - BigInt(slippageBps))) / 10000n;
         await withTimeout(sell(addresses, launch.address, amt, minOut), TX_TIMEOUT_MS, "Sell");
-        toastSuccess(`Sold ${formatWad(amt, 0)} ${launch.symbol} for ${fmtQuote(expectedOut, quotePlaces)} ${quoteSymbol}`);
+        toastSuccess("Swap confirmed", `${formatWad(amt, 0)} ${launch.symbol} → ${fmtQuote(expectedOut, quotePlaces)} ${quoteSymbol}`);
       }
       setAmount("");
       setQuote(null);
@@ -496,6 +535,9 @@ export default function LaunchDetail({
               <span className="text-muted">·</span>
               <span>{launch.creator.slice(0, 6)}...{launch.creator.slice(-4)}</span>
             </div>
+            {meta?.description ? (
+              <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-muted">{meta.description}</p>
+            ) : null}
             {meta && (meta.website || meta.telegram || meta.discord) && (
               <div className="flex items-center gap-3 mt-1">
                 {meta.website && (
@@ -606,38 +648,28 @@ export default function LaunchDetail({
         {/* ── Right: swap card + stats (fixed width, sticky) ── */}
         <div className="w-full lg:w-[380px] shrink-0">
           <div className="lg:sticky lg:top-4 space-y-4">
-            {side === "buy" ? (
-              <div className="flex gap-1 rounded-lg border border-border bg-surface p-1">
-                {(
-                  [
-                    { key: "ETH" as const, label: quoteSymbol },
-                    { key: "USDG" as const, label: "USDG" },
-                  ]
-                ).map((opt) => (
-                  <button
-                    key={opt.key}
-                    type="button"
-                    onClick={() => {
-                      setPayToken(opt.key);
-                      setAmount("");
-                    }}
-                    className={`flex-1 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
-                      payToken === opt.key ? "bg-accent text-accent-ink" : "text-muted hover:text-foreground"
-                    }`}
-                  >
-                    Pay in {opt.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
             <SwapCard
               mode={side}
               onModeChange={(m) => { setSide(m); setAmount(quoteSymbol === "cbBTC" ? "0.01" : "0.5"); }}
               buyLabel="Buy" sellLabel="Sell"
-              inputToken={{ symbol: side === "buy" ? paySymbol : launch.symbol, balance: side === "buy" ? buyMax : tokenBalance }}
+              inputToken={{
+                symbol: side === "buy" ? paySymbol : launch.symbol,
+                balance: side === "buy" ? buyMax : tokenBalance,
+                decimals: side === "buy" ? (payToken === "USDG" ? 18 : quoteDecimals) : 18,
+              }}
               outputToken={{ symbol: side === "buy" ? launch.symbol : quoteSymbol, balance: 0n }}
+              inputTokenOptions={
+                side === "buy"
+                  ? [
+                      { key: "ETH", symbol: quoteSymbol },
+                      ...(wrapsNative ? [{ key: "WETH", symbol: "WETH" }] : []),
+                      { key: "USDG", symbol: "USDG" },
+                    ]
+                  : undefined
+              }
+              onInputTokenChange={side === "buy" ? (v) => { setPayToken(v as typeof payToken); setAmount(""); } : undefined}
               value={amount} onValueChange={(v) => refreshQuote(v)}
-              quoteLabel={quote !== null ? (side === "buy" ? `${formatWad(quote, 0)} ${launch.symbol}` : `${fmtQuote(quote, quotePlaces)} ${quoteSymbol}`) : "…"}
+              quoteLabel={quote !== null ? (side === "buy" ? formatWad(quote, 0) : fmtQuote(quote, quotePlaces)) : "…"}
               inputUsdLabel={inputUsdLabel}
               outputUsdLabel={outputUsdLabel}
               slippage={(slippageBps / 100).toFixed(1)} slippageOptions={[50, 100, 300]} onSlippageChange={setSlippageBps} slippageBps={slippageBps}
@@ -713,20 +745,17 @@ export default function LaunchDetail({
               const buyVol = buys.reduce((sum, t) => sum + t.amountUsd, 0);
               const sellVol = sells.reduce((sum, t) => sum + t.amountUsd, 0);
               const totalVol = buyVol + sellVol;
-              const uniqueBuyers = new Set(buys.map((t) => t.account)).size;
-              const uniqueSellers = new Set(sells.map((t) => t.account)).size;
-              const totalHolders = uniqueBuyers + uniqueSellers;
               const buyPct = totalVol > 0 ? (buyVol / totalVol) * 100 : 50;
               return (
                 <div className="rounded-xl border border-border bg-card p-3 space-y-2.5">
                   <div className="text-[10px] uppercase tracking-wider text-muted font-semibold">Token Data</div>
                   <div className="grid grid-cols-2 gap-1.5">
                     <div className="rounded-lg bg-surface px-2.5 py-2">
-                      <div className="text-base font-bold text-foreground leading-tight">{totalHolders}</div>
+                      <div className="text-base font-bold text-foreground leading-tight">{holderCount ?? "…"}</div>
                       <div className="text-[10px] text-muted leading-tight">Holders</div>
                     </div>
                     <div className="rounded-lg bg-surface px-2.5 py-2">
-                      <div className="text-base font-bold text-foreground leading-tight truncate">{usd(launch.tvlUsd)}</div>
+                      <div className="text-base font-bold text-foreground leading-tight truncate">{usd(liquidityUsd)}</div>
                       <div className="text-[10px] text-muted leading-tight">Liquidity</div>
                     </div>
                     <div className="rounded-lg bg-surface px-2.5 py-2">

@@ -57,6 +57,7 @@ export async function POST(req: Request) {
     }
     if (imageUrl && imageUrl.length > 500) return NextResponse.json({ error: "imageUrl too long" }, { status: 400 });
     if (website && website.length > 300) return NextResponse.json({ error: "website too long" }, { status: 400 });
+    if (description && description.length > 500) return NextResponse.json({ error: "description too long (max 500 chars)" }, { status: 400 });
 
     await upsertTokenMetadata({
       launch,

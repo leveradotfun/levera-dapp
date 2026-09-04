@@ -3,6 +3,9 @@ import { DeployedAddresses } from "./chain";
 import { allFactories, fetchCollateralPriceUsd, fetchLaunchAddresses, getLyc, getLaunch, protectLaunch, WAD } from "./launchpad";
 import { assertWalletSeesApp, getProvider, withActiveSigner } from "./activeSigner";
 import { sendReplacing, walletTxOverrides } from "./txFees";
+import { EarnPoolAbi } from "./artifacts/EarnPool";
+import { OracleSwapRouterAbi } from "./artifacts/OracleSwapRouter";
+import { MockWETHAbi } from "./artifacts/MockWETH";
 
 /// The senior book as a whole. These are the figures LEVERA.md §14 says the LYC page must show, so
 /// that "price up" is never mistaken for yield when it is really a fee mint bringing its own
@@ -230,11 +233,16 @@ export async function mintWithEth(addresses: DeployedAddresses, ethAmount: bigin
 /// off the collateral's registry entry on-chain, and the caller prices it with the same feed for
 /// the share estimate and the ledger. The sell-for-cash happens inside the same transaction, so
 /// shares are dollar-backed on arrival exactly as with ETH.
+///
+/// `decimals` defaults to 18 (WETH). Pass the token's own decimals for anything else -- 8 for
+/// cbBTC -- so a raw non-18-decimal `amount` gets lifted to WAD terms before it meets a WAD price;
+/// skipping this is what made cbBTC mint estimates round to zero.
 export async function mintWithCollateral(
   addresses: DeployedAddresses,
   token: string,
   amount: bigint,
-  tokenUsdPriceWad: bigint
+  tokenUsdPriceWad: bigint,
+  decimals: number = 18
 ) {
   await assertWalletSeesApp(addresses.factory);
   return withActiveSigner(async ({ signer, address }) => {
@@ -245,7 +253,8 @@ export async function mintWithCollateral(
     }
     const h = getLyc(addresses.lyc, signer);
     const g = await fetchLycGlobal(addresses);
-    const usdValue = (amount * tokenUsdPriceWad) / WAD;
+    const decimalLift = 10n ** BigInt(18 - decimals);
+    const usdValue = (amount * decimalLift * tokenUsdPriceWad) / WAD;
     const sharesMinted = quoteMint(g, usdValue);
     const receipt = await (await sendReplacing(address, (o) => h.mintWithCollateral(token, amount, o), 2_000_000n)).wait();
     const { logLycMint } = await import("./sessionLog");
@@ -317,6 +326,103 @@ export async function redeemLyc(addresses: DeployedAddresses, shares: bigint) {
         8_000_000n,
       );
       const receipt = await tx.wait();
+      const q = quoteRedeem(await fetchLycGlobal(addresses), shares);
+      logLycRedeem({
+        kind: "in-kind",
+        shares: shares.toString(),
+        usdOut: q.usdOut.toString(),
+        peeled: peelFrom,
+      }).catch(() => {});
+      return receipt;
+    } catch (e) {
+      logError("earn pool redeem", e).catch(() => {});
+      throw e;
+    }
+  });
+}
+
+export type RedeemTarget = "USDG" | "WETH" | "ETH" | "CBBTC";
+
+/// Redeem LYC, then -- for anything other than USDG -- swap the cash proceeds into the requested
+/// asset in the same call. The pool itself only ever pays out idle USDG (or, if cash is short,
+/// whatever it peels in kind; see `redeemLyc` above) -- converting to a specific token afterwards
+/// is deliberately left to the holder's own follow-up transaction, on-chain. This just automates
+/// that follow-up so "withdraw as ETH" is one click instead of two.
+///
+/// Any in-kind portion of the redeem (only reached when idle cash is short) is left as whatever
+/// raw collateral the pool peeled -- it is not further converted here.
+export async function redeemLycTo(addresses: DeployedAddresses, shares: bigint, target: RedeemTarget) {
+  if (target === "USDG") return redeemLyc(addresses, shares);
+
+  await assertWalletSeesApp(addresses.factory);
+  const peelFrom = await fetchPeelOrder(addresses);
+  const { logError, logLycRedeem } = await import("./sessionLog");
+  return withActiveSigner(async ({ signer, address }) => {
+    const h = getLyc(addresses.lyc, signer);
+    try {
+      const tx = await sendReplacing(
+        address,
+        (overrides) => h.redeemInKind(shares, peelFrom, overrides),
+        8_000_000n,
+      );
+      const receipt = await tx.wait();
+
+      // usdgOut is only available from the event -- redeemInKind's return value isn't readable
+      // off a mined transaction.
+      const earnIface = new ethers.Interface(EarnPoolAbi as ethers.InterfaceAbi);
+      let usdgOut = 0n;
+      for (const log of receipt.logs) {
+        try {
+          const parsed = earnIface.parseLog(log);
+          if (parsed?.name === "Redeemed") {
+            usdgOut = parsed.args.usdgOut as bigint;
+            break;
+          }
+        } catch {
+          // not this contract's log
+        }
+      }
+
+      if (usdgOut > 0n) {
+        const routerAddress = target === "CBBTC" ? addresses.cbbtcRouter : addresses.router;
+        if (!routerAddress) throw new Error(`No router configured to convert USDG to ${target}.`);
+
+        const usdg = new ethers.Contract(
+          addresses.usdg,
+          ["function approve(address,uint256) returns (bool)", "function allowance(address,address) view returns (uint256)"],
+          signer,
+        );
+        const allowance: bigint = await usdg.allowance(address, routerAddress);
+        if (allowance < usdgOut) {
+          await (await usdg.approve(routerAddress, ethers.MaxUint256, await walletTxOverrides(address, 200_000n))).wait();
+        }
+        const router = new ethers.Contract(routerAddress, OracleSwapRouterAbi as ethers.InterfaceAbi, signer);
+        const swapReceipt = await (
+          await router.swapUsdgForCollateral(usdgOut, 0, await walletTxOverrides(address, 500_000n))
+        ).wait();
+
+        // "ETH" means native: swap lands as WETH, then unwrap it in the same click.
+        if (target === "ETH") {
+          const swapIface = new ethers.Interface(OracleSwapRouterAbi as ethers.InterfaceAbi);
+          let wethOut = 0n;
+          for (const log of swapReceipt.logs) {
+            try {
+              const parsed = swapIface.parseLog(log);
+              if (parsed?.name === "Swap") {
+                wethOut = parsed.args.amountOut as bigint;
+                break;
+              }
+            } catch {
+              // not this contract's log
+            }
+          }
+          if (wethOut > 0n) {
+            const weth = new ethers.Contract(addresses.weth, MockWETHAbi as ethers.InterfaceAbi, signer);
+            await (await weth.withdraw(wethOut, await walletTxOverrides(address, 100_000n))).wait();
+          }
+        }
+      }
+
       const q = quoteRedeem(await fetchLycGlobal(addresses), shares);
       logLycRedeem({
         kind: "in-kind",

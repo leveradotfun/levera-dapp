@@ -1,11 +1,12 @@
-/// Shared token logo. Files live in /public/tokens/ (lyc.svg, cbbtc.svg, weth.svg, eth.svg); a
-/// symbol not in that set (a launched coin with no logo yet, or USDG until a real mark exists)
-/// falls back to a plain letter badge rather than a broken image.
+/// Shared token logo. Files live in /public/tokens/ (lyc.svg, cbbtc.svg, weth.svg, eth.svg,
+/// usdg.svg); a symbol not in that set (a launched coin with no logo yet) falls back to a plain
+/// letter badge rather than a broken image.
 const TOKEN_LOGOS: Record<string, string> = {
   ETH: "/tokens/eth.svg",
   WETH: "/tokens/weth.svg",
   CBBTC: "/tokens/cbbtc.svg",
   LYC: "/tokens/lyc.svg",
+  USDG: "/tokens/usdg.svg",
 };
 
 const FALLBACK_COLORS: Record<string, string> = {

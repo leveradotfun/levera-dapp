@@ -1,9 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import { ethers } from "ethers";
 import ConnectWalletButton from "@/components/ConnectWalletButton";
 import TokenIcon from "@/components/TokenIcon";
 import { formatWad } from "@/lib/launchpad";
+
+/// formatWad always divides by 1e18 — correct for every token here except cbBTC, which is 8
+/// decimals. Format against the token's own decimals so an 8-decimal balance doesn't read as ~0.
+function formatTokenBalance(balance: bigint, decimals: number): string {
+  if (decimals === 18) return formatWad(balance, 4);
+  const s = parseFloat(ethers.formatUnits(balance, decimals));
+  return s.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+}
 
 function sanitizeNumericInput(v: string): string {
   let s = v.replace(/,/g, "").replace(/[^0-9.]/g, "");
@@ -34,6 +43,16 @@ function formatWithCommas(v: string): string {
 export type SwapToken = {
   symbol: string;
   balance: bigint;
+  /** Defaults to 18 (WAD). Set to 8 for cbBTC. */
+  decimals?: number;
+};
+
+/// One entry in a token picker attached to a Pay/Receive pill. `key` is what's reported back
+/// through onChange; `symbol` drives the icon and is shown as the label unless `label` overrides.
+export type TokenOption = {
+  key: string;
+  symbol: string;
+  label?: string;
 };
 
 export type SwapCardProps = {
@@ -45,6 +64,12 @@ export type SwapCardProps = {
   inputToken: SwapToken;
   /** The token being received (buy: coin, sell: ETH/USDG) */
   outputToken: SwapToken;
+  /** When set (2+ entries), the Pay pill becomes a dropdown instead of a static badge. */
+  inputTokenOptions?: TokenOption[];
+  onInputTokenChange?: (key: string) => void;
+  /** Same, for the Receive pill. */
+  outputTokenOptions?: TokenOption[];
+  onOutputTokenChange?: (key: string) => void;
   /** Controlled input value */
   value: string;
   onValueChange: (v: string) => void;
@@ -71,6 +96,66 @@ export type SwapCardProps = {
   onMax?: () => void;
 };
 
+/// The token pill on a Pay/Receive row. Plain badge when there's nothing to pick; a dropdown
+/// button, opening a small menu of icons + symbols, when `options` has more than one entry.
+function TokenPill({
+  symbol,
+  options,
+  onChange,
+}: {
+  symbol: string;
+  options?: TokenOption[];
+  onChange?: (key: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  if (!options || options.length < 2 || !onChange) {
+    return (
+      <span className="flex items-center gap-1.5 pl-1.5 pr-3 py-1.5 rounded-full bg-surface-2 text-sm font-semibold text-foreground">
+        <TokenIcon symbol={symbol} size={20} />
+        {symbol}
+      </span>
+    );
+  }
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1.5 pl-1.5 pr-2 py-1.5 rounded-full bg-surface-2 text-sm font-semibold text-foreground hover:brightness-110 transition-[filter]"
+      >
+        <TokenIcon symbol={symbol} size={20} />
+        {symbol}
+        <svg className={`w-3.5 h-3.5 text-muted transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open ? (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-2 w-40 rounded-xl border border-border bg-card shadow-xl p-1.5 z-20">
+            {options.map((opt) => (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => {
+                  onChange(opt.key);
+                  setOpen(false);
+                }}
+                className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm font-medium transition-colors ${
+                  opt.symbol === symbol ? "bg-surface-2 text-foreground" : "text-muted hover:bg-surface hover:text-foreground"
+                }`}
+              >
+                <TokenIcon symbol={opt.symbol} size={18} />
+                {opt.label ?? opt.symbol}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 export default function SwapCard({
   mode,
   onModeChange,
@@ -78,6 +163,10 @@ export default function SwapCard({
   sellLabel = "Sell",
   inputToken,
   outputToken,
+  inputTokenOptions,
+  onInputTokenChange,
+  outputTokenOptions,
+  onOutputTokenChange,
   value,
   onValueChange,
   quoteLabel,
@@ -206,12 +295,12 @@ export default function SwapCard({
         ) : null}
       </div>
 
-      {/* You Send */}
-      <div className="rounded-xl border border-border bg-surface p-3">
-        <div className="flex items-center justify-between text-xs text-muted mb-2">
-          <span>You Send</span>
+      {/* Pay */}
+      <div className="relative rounded-2xl border border-border bg-surface p-4">
+        <div className="flex items-center justify-between text-xs text-muted mb-1">
+          <span>Pay</span>
           <div className="flex items-center gap-2">
-            <span className="font-mono">{formatWad(inputToken.balance, 4)}</span>
+            <span className="font-mono">{formatTokenBalance(inputToken.balance, inputToken.decimals ?? 18)}</span>
             {onMax ? (
               <button onClick={onMax} className="rounded px-1.5 py-0.5 text-accent hover:bg-surface-2 transition-colors">
                 Max
@@ -225,36 +314,30 @@ export default function SwapCard({
             onChange={(e) => onValueChange(sanitizeNumericInput(e.target.value))}
             placeholder="0"
             inputMode="decimal"
-            className="min-w-0 flex-1 bg-transparent font-mono text-xl text-foreground outline-none placeholder:text-muted"
+            className="min-w-0 flex-1 bg-transparent font-mono text-3xl text-foreground outline-none placeholder:text-muted"
           />
-          <span className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-surface-2 text-sm font-medium text-foreground">
-            <TokenIcon symbol={inputToken.symbol} size={16} />
-            {inputToken.symbol}
-          </span>
+          <TokenPill symbol={inputToken.symbol} options={inputTokenOptions} onChange={onInputTokenChange} />
         </div>
         {inputUsdLabel ? <div className="mt-1 text-xs text-muted">{inputUsdLabel}</div> : null}
       </div>
 
       {/* Swap direction */}
-      <div className="flex justify-center">
-        <button className="w-8 h-8 rounded-lg bg-surface border border-border flex items-center justify-center text-muted hover:text-foreground transition-colors">
+      <div className="flex justify-center -my-6 relative z-10">
+        <button className="w-9 h-9 rounded-xl bg-card border border-border flex items-center justify-center text-muted hover:text-foreground transition-colors">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
           </svg>
         </button>
       </div>
 
-      {/* You Receive */}
-      <div className="rounded-xl border border-border bg-surface p-3">
-        <div className="flex items-center justify-between text-xs text-muted mb-2">
-          <span>You Receive</span>
+      {/* Receive */}
+      <div className="rounded-2xl border border-border bg-surface p-4">
+        <div className="flex items-center justify-between text-xs text-muted mb-1">
+          <span>Receive</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="flex-1 font-mono text-xl text-foreground">{quoteLabel || "0"}</span>
-          <span className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-surface-2 text-sm font-medium text-foreground">
-            <TokenIcon symbol={outputToken.symbol} size={16} />
-            {outputToken.symbol}
-          </span>
+          <span className="flex-1 truncate font-mono text-3xl text-foreground">{quoteLabel || "0"}</span>
+          <TokenPill symbol={outputToken.symbol} options={outputTokenOptions} onChange={onOutputTokenChange} />
         </div>
         {outputUsdLabel ? <div className="mt-1 text-xs text-muted">{outputUsdLabel}</div> : null}
       </div>
@@ -272,11 +355,7 @@ export default function SwapCard({
         <button
           disabled={busy || disabled || parsed <= 0n}
           onClick={handleSubmit}
-          className={`w-full rounded-xl px-4 py-3 text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-            mode === "buy"
-              ? "bg-accent text-accent-ink hover:brightness-110"
-              : "border border-border text-foreground hover:bg-surface"
-          }`}
+          className="w-full rounded-xl px-4 py-3 text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-accent text-accent-ink hover:brightness-110"
         >
           {busy
             ? "Confirming..."

@@ -3,10 +3,19 @@
 import { useEffect, useState } from "react";
 import { ToastItem, dismissToast, subscribeToasts } from "@/lib/toast";
 
-const KIND_STYLES: Record<ToastItem["kind"], string> = {
-  success: "border-green/40 bg-green/10 text-green",
-  error: "border-red/40 bg-red/10 text-red",
-  info: "border-accent/40 bg-accent/10 text-accent",
+// Success uses the brand accent, not a generic green -- this app has one accent color and a toast
+// confirming a mint/swap/redeem is exactly the kind of moment it should show up in. Error stays
+// semantically red; a failed tx is not an on-brand moment.
+const KIND_BORDER: Record<ToastItem["kind"], string> = {
+  success: "border-border",
+  error: "border-red/30",
+  info: "border-border",
+};
+
+const KIND_BADGE: Record<ToastItem["kind"], string> = {
+  success: "bg-accent text-accent-ink",
+  error: "bg-red/15 text-red",
+  info: "bg-accent/15 text-accent",
 };
 
 const KIND_ICON: Record<ToastItem["kind"], string> = {
@@ -27,10 +36,15 @@ export default function ToastHost() {
       {items.map((item) => (
         <div
           key={item.id}
-          className={`pointer-events-auto flex w-full max-w-sm items-start gap-2 rounded-lg border bg-surface px-3 py-2.5 text-sm shadow-lg ${KIND_STYLES[item.kind]}`}
+          className={`pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-xl border bg-card px-4 py-3 shadow-lg ${KIND_BORDER[item.kind]}`}
         >
-          <span className="mt-0.5 shrink-0 font-mono">{KIND_ICON[item.kind]}</span>
-          <span className="flex-1 text-foreground">{item.message}</span>
+          <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${KIND_BADGE[item.kind]}`}>
+            {KIND_ICON[item.kind]}
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-sm font-semibold text-foreground">{item.message}</span>
+            {item.detail ? <span className="mt-0.5 block text-xs text-muted break-words">{item.detail}</span> : null}
+          </span>
           <button
             onClick={() => dismissToast(item.id)}
             className="shrink-0 text-muted hover:text-foreground"

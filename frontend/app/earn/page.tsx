@@ -7,6 +7,7 @@ import { useWallet } from "@/lib/wallet";
 import {
   LycGlobal,
   LycPosition,
+  RedeemTarget,
   fetchLycGlobal,
   fetchLycPosition,
   mintWithCollateral,
@@ -15,7 +16,7 @@ import {
   parseEthInput,
   quoteMint,
   quoteRedeem,
-  redeemLyc,
+  redeemLycTo,
 } from "@/lib/lyc";
 import { WAD, fetchCollateralPriceUsd, formatWad, usd } from "@/lib/launchpad";
 import { parseQuote } from "@/lib/quoteAssets";
@@ -34,10 +35,15 @@ export default function EarnPage() {
   const [g, setG] = useState<LycGlobal | null>(null);
   const [pos, setPos] = useState<LycPosition | null>(null);
   const [depositAmt, setDepositAmt] = useState("");
-  // ETH = native gas. CBBTC = the second listed collateral, when the deployment has it; the
-  // option simply does not render otherwise.
-  const [payWith, setPayWith] = useState<"ETH" | "USDG" | "CBBTC">("ETH");
+  // ETH = native gas, spent via the payable mintWithEth (wrapped to WETH inside the same tx).
+  // WETH = the ERC-20 already in your wallet, spent via mintWithCollateral(weth, ...) instead --
+  // a different balance, a different allowance, a different call. CBBTC = the second listed
+  // collateral, when the deployment has it; the option simply does not render otherwise.
+  const [payWith, setPayWith] = useState<"ETH" | "WETH" | "USDG" | "CBBTC">("ETH");
   const [cbbtcPriceWad, setCbbtcPriceWad] = useState(0n);
+  // What a redeem pays out as. USDG is the pool's native payout (see redeemLycTo); every other
+  // option is that same USDG swapped to the target in the same click.
+  const [redeemAs, setRedeemAs] = useState<RedeemTarget>("USDG");
   const [redeemAmt, setRedeemAmt] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [ethPriceWad, setEthPriceWad] = useState(0n);
@@ -72,12 +78,12 @@ export default function EarnPage() {
     return () => { cancelled = true; clearInterval(id); };
   }, [refresh]);
 
-  async function run(label: string, fn: () => Promise<unknown>, ok: string) {
+  async function run(label: string, fn: () => Promise<unknown>, ok: string, okDetail?: string) {
     if (!addresses) return;
     setBusy(label);
     try {
       await withTimeout(fn(), TX_TIMEOUT_LONG_MS, label);
-      toastSuccess(ok);
+      toastSuccess(ok, okDetail);
       await refresh();
     } catch (e) {
       toastError(e, `${label} failed.`);
@@ -103,11 +109,15 @@ export default function EarnPage() {
   // cbBTC is 8 decimals; the amount is parsed in the pay asset's own units.
   const depositWei = payWith === "CBBTC" ? parseQuote(depositAmt, 8) : parseEthInput(depositAmt);
   const redeemWei = parseEthInput(redeemAmt);
+  // cbBTC's raw amount is 8-decimal, so it needs the same 1e10 lift to WAD every other cbBTC USD
+  // conversion in this app applies (see lib/launchpad.ts's quoteScale) before the oracle price
+  // multiplies it -- skipping it made the mint quote ~1e10x too small, rounding "You Receive" to 0.
+  const CBBTC_DECIMAL_LIFT = 10n ** 10n;
   const depositUsd =
-    payWith === "ETH"
+    payWith === "ETH" || payWith === "WETH"
       ? (depositWei * ethPriceWad) / WAD
       : payWith === "CBBTC"
-        ? (depositWei * cbbtcPriceWad) / WAD
+        ? (depositWei * CBBTC_DECIMAL_LIFT * cbbtcPriceWad) / WAD
         : depositWei;
   const paySymbol = payWith === "CBBTC" ? "cbBTC" : payWith;
   const payBalance =
@@ -115,11 +125,29 @@ export default function EarnPage() {
       ? 0n
       : payWith === "ETH"
         ? spendableEth(wallet.balances.eth)
-        : payWith === "CBBTC"
-          ? wallet.balances.cbbtc
-          : wallet.balances.usdg;
+        : payWith === "WETH"
+          ? wallet.balances.weth
+          : payWith === "CBBTC"
+            ? wallet.balances.cbbtc
+            : wallet.balances.usdg;
   const mintQuote = g ? quoteMint(g, depositUsd) : 0n;
   const redeemQuote = g ? quoteRedeem(g, redeemWei) : { usdOut: 0n, covered: true };
+  // Preview only -- redeemLycTo prices the actual swap on-chain at fill time. USDG is 1:1 with the
+  // pool's own USD accounting, so no conversion needed there; every other target is estimated the
+  // same way depositUsd converts the other direction: divide the USD amount by the asset's price
+  // (lifting cbBTC's 8-decimal result back down out of WAD terms).
+  const redeemTokenEstimate =
+    redeemQuote.usdOut <= 0n
+      ? null
+      : redeemAs === "USDG"
+        ? redeemQuote.usdOut
+        : redeemAs === "CBBTC"
+          ? cbbtcPriceWad > 0n
+            ? (redeemQuote.usdOut * WAD) / cbbtcPriceWad / CBBTC_DECIMAL_LIFT
+            : null
+          : ethPriceWad > 0n
+            ? (redeemQuote.usdOut * WAD) / ethPriceWad
+            : null;
 
   const activeValue = swapMode === "buy" ? depositAmt : redeemAmt;
   const setActiveValue = swapMode === "buy" ? setDepositAmt : setRedeemAmt;
@@ -164,7 +192,18 @@ export default function EarnPage() {
             badge={navReturn !== 0 ? `${navReturn >= 0 ? "+" : ""}${navReturn.toFixed(2)}%` : "+0.00%"}
             badgeColor={navReturn >= 0 ? "text-green-400 bg-green-400/10" : "text-red-400 bg-red-400/10"} accent />
           <div className="w-px bg-border" />
-          <StatBlock label="LYC APY" value={apy.h24.ready && apy.h24.simpleApr !== null ? formatApr(apy.h24.simpleApr) : "—"} accent />
+          <StatBlock
+            label="LYC APY"
+            value={
+              apy.h24.ready && apy.h24.simpleApr !== null
+                ? formatApr(apy.h24.simpleApr)
+                : apy.all.ready && apy.all.simpleApr !== null
+                  ? `~${formatApr(apy.all.simpleApr)}`
+                  : "—"
+            }
+            badge={!apy.h24.ready && apy.all.ready ? "since launch" : undefined}
+            accent
+          />
           <div className="w-px bg-border" />
           <StatBlock label="Market Cap" value={marketCap >= 1e9 ? `$${(marketCap / 1e9).toFixed(2)}B` : marketCap >= 1e6 ? `$${(marketCap / 1e6).toFixed(2)}M` : `$${marketCap.toFixed(2)}`} />
         </div>
@@ -201,44 +240,49 @@ export default function EarnPage() {
       {/* ── Right: swap card ── */}
       <div className="w-full lg:w-[380px] shrink-0">
         <div className="lg:sticky lg:top-4 space-y-3">
-          {swapMode === "buy" ? (
-            <div className="flex gap-1 rounded-lg border border-border bg-surface p-1">
-              {(
-                [
-                  { key: "ETH" as const, label: "ETH" },
-                  ...(addresses.cbbtc ? [{ key: "CBBTC" as const, label: "cbBTC" }] : []),
-                  { key: "USDG" as const, label: "USDG" },
-                ]
-              ).map((opt) => (
-                <button
-                  key={opt.key}
-                  type="button"
-                  onClick={() => {
-                    setPayWith(opt.key);
-                    setDepositAmt("");
-                  }}
-                  className={`flex-1 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
-                    payWith === opt.key ? "bg-accent text-accent-ink" : "text-muted hover:text-foreground"
-                  }`}
-                >
-                  Pay in {opt.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
           <SwapCard
             mode={swapMode}
             onModeChange={(m) => { setSwapMode(m); setDepositAmt(""); setRedeemAmt(""); }}
             buyLabel="Buy LYC" sellLabel="Sell LYC"
-            inputToken={{ symbol: swapMode === "buy" ? paySymbol : "LYC", balance: swapMode === "buy" ? payBalance : (pos?.balance ?? 0n) }}
-            outputToken={{ symbol: swapMode === "buy" ? "LYC" : "USDG", balance: 0n }}
+            inputToken={{ symbol: swapMode === "buy" ? paySymbol : "LYC", balance: swapMode === "buy" ? payBalance : (pos?.balance ?? 0n), decimals: swapMode === "buy" && payWith === "CBBTC" ? 8 : 18 }}
+            outputToken={{ symbol: swapMode === "buy" ? "LYC" : redeemAs === "CBBTC" ? "cbBTC" : redeemAs, balance: 0n }}
+            inputTokenOptions={
+              swapMode === "buy"
+                ? [
+                    { key: "ETH", symbol: "ETH" },
+                    { key: "WETH", symbol: "WETH" },
+                    ...(addresses.cbbtc ? [{ key: "CBBTC", symbol: "cbBTC" }] : []),
+                    { key: "USDG", symbol: "USDG" },
+                  ]
+                : undefined
+            }
+            onInputTokenChange={swapMode === "buy" ? (v) => { setPayWith(v as typeof payWith); setDepositAmt(""); } : undefined}
+            outputTokenOptions={
+              swapMode === "sell"
+                ? [
+                    { key: "USDG", symbol: "USDG" },
+                    { key: "ETH", symbol: "ETH" },
+                    { key: "WETH", symbol: "WETH" },
+                    ...(addresses.cbbtc ? [{ key: "CBBTC", symbol: "cbBTC" }] : []),
+                  ]
+                : undefined
+            }
+            onOutputTokenChange={swapMode === "sell" ? (v) => setRedeemAs(v as RedeemTarget) : undefined}
             value={activeValue} onValueChange={setActiveValue}
-            quoteLabel={swapMode === "buy" ? `${formatWad(mintQuote, 4)} LYC` : `${usd(redeemQuote.usdOut)}${!redeemQuote.covered && redeemWei > 0n ? " (pro-rata)" : ""}`}
+            quoteLabel={
+              swapMode === "buy"
+                ? formatWad(mintQuote, 4)
+                : redeemTokenEstimate !== null
+                  ? redeemAs === "CBBTC"
+                    ? ethers.formatUnits(redeemTokenEstimate, 8)
+                    : formatWad(redeemTokenEstimate, 4)
+                  : "—"
+            }
             inputUsdLabel={earnInputUsdLabel}
             outputUsdLabel={earnOutputUsdLabel}
             busy={busy !== null} isConnected={wallet.isConnected} connectLabel="Connect wallet to trade"
             buyButtonLabel={busy === "Mint" ? "Minting..." : `Mint with ${paySymbol}`}
-            sellButtonLabel={busy === "Redeem" ? "Redeeming..." : "Sell LYC"}
+            sellButtonLabel={busy === "Redeem" ? "Redeeming..." : `Sell for ${redeemAs === "CBBTC" ? "cbBTC" : redeemAs}`}
             onMax={() => { if (swapMode === "buy") { setDepositAmt(payWith === "CBBTC" ? ethers.formatUnits(payBalance, 8) : formatWad(payBalance, 4)); } else { setRedeemAmt(pos ? formatWad(pos.balance, 6) : "0"); } }}
             warning={!redeemQuote.covered && redeemWei > 0n ? <div className="rounded-lg bg-amber-400/10 border border-amber-400/20 px-3 py-2 text-xs text-amber-400">Book is impaired — you receive pro-rata of assets, not $1.</div> : undefined}
             onBuy={() =>
@@ -247,13 +291,29 @@ export default function EarnPage() {
                 () =>
                   payWith === "ETH"
                     ? mintWithEth(addresses, depositWei)
-                    : payWith === "CBBTC"
-                      ? mintWithCollateral(addresses, addresses.cbbtc!, depositWei, cbbtcPriceWad)
-                      : mintWithUsdg(addresses, depositWei),
-                "Minted LYC.",
+                    : payWith === "WETH"
+                      ? mintWithCollateral(addresses, addresses.weth, depositWei, ethPriceWad)
+                      : payWith === "CBBTC"
+                        ? mintWithCollateral(addresses, addresses.cbbtc!, depositWei, cbbtcPriceWad, 8)
+                        : mintWithUsdg(addresses, depositWei),
+                "Minted LYC",
+                `${depositAmt} ${paySymbol} → ${formatWad(mintQuote, 4)} LYC`,
               )
             }
-            onSell={() => run("Redeem", () => redeemLyc(addresses, redeemWei), "Redeemed.")}
+            onSell={() =>
+              run(
+                "Redeem",
+                () => redeemLycTo(addresses, redeemWei, redeemAs),
+                "Redeemed LYC",
+                `${redeemAmt} LYC → ${
+                  redeemTokenEstimate !== null
+                    ? redeemAs === "CBBTC"
+                      ? ethers.formatUnits(redeemTokenEstimate, 8)
+                      : formatWad(redeemTokenEstimate, 4)
+                    : "…"
+                } ${redeemAs === "CBBTC" ? "cbBTC" : redeemAs}`,
+              )
+            }
           />
         </div>
       </div>

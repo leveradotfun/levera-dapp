@@ -17,7 +17,7 @@
   "usdg": "0xeB79D0d7e33FB4D0cbA2DC96088194249BeA19a6",
   "oracle": "0xA779EDF9c6B565BC1B5E4fC846046dD4109Cbd35",
   "router": "0xc67405c3922adfaf0dF8818D588a16664482428e",
-  "hfyc": "0x5304ceC594B88cc091f0d43cA189C2577d327b88",
+  "lyc": "0x5304ceC594B88cc091f0d43cA189C2577d327b88",
   "factory": "0x92233bD9947533041437C33eff41bf87d34257A7",
   "launch": "",
   "faucet": "0x4F0fe498c975456514D030e2DD865E1F2103f3A2",
@@ -34,10 +34,15 @@
     "QuoteZap": "sha256:b7dbaddadbf7ca706b648d6612cb0a48b99ff8795cb0b9de7d0f0b9057ba0978"
   },
   "seededPrices": {
-    "ethUsd": "2499.38",
+    "ethUsd": "2525.56946329",
     "usdgUsd": "1.00015429",
-    "cbbtcUsd": "80836.96486725"
+    "cbbtcUsd": "80890.68144558"
   },
-  "seededAt": "2026-09-03T16:32:01.604Z",
-  "updatedAt": 1788453121608
+  "seededAt": "2026-09-04T09:06:12.927Z",
+  "updatedAt": 1788512772932,
+  "seededSources": {
+    "ethUsd": "live (939s old)",
+    "usdgUsd": "live (63376s old)",
+    "cbbtcUsd": "live (27692s old)"
+  }
 }

@@ -1,0 +1,39 @@
+{
+  "name": "@levera/sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for the Levera launchpad stack on Robinhood Chain — launch coins, trade bonding curves and AMMs, and stake the Earn Pool.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "default": "./dist/node.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build",
+    "smoke": "node test/smoke.mjs"
+  },
+  "peerDependencies": {
+    "ethers": "^6.17.0"
+  },
+  "devDependencies": {
+    "ethers": "^6.17.0",
+    "typescript": "^5.6.0",
+    "@types/node": "^20.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

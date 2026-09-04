@@ -94,13 +94,16 @@ export function normalizeDeployedAddresses(raw: unknown): DeployedAddresses | nu
   const o = raw as Record<string, unknown>;
   const usdg = (typeof o.usdg === "string" && o.usdg) || (typeof o.usdc === "string" && o.usdc) || "";
   if (typeof o.factory !== "string" || !o.factory || !usdg) return null;
+  // deploy.mjs still writes this field as "hfyc" (predates the LYC rename); read either key so an
+  // already-published deployment file keeps resolving to the right EarnPool/LYC address.
+  const lyc = (typeof o.lyc === "string" && o.lyc) || (typeof o.hfyc === "string" && o.hfyc) || "";
   const str = (k: string) => (typeof o[k] === "string" ? (o[k] as string) : undefined);
   return {
     weth: String(o.weth ?? ""),
     usdg,
     oracle: String(o.oracle ?? ""),
     router: String(o.router ?? ""),
-    lyc: String(o.lyc ?? ""),
+    lyc,
     factory: o.factory,
     launch: String(o.launch ?? ""),
     feed: str("feed"),

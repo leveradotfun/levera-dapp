@@ -232,7 +232,7 @@ async function main() {
     usdg: usdgAddress,
     oracle: ethOracleAddress,
     router: routerAddress,
-    hfyc: earnAddress,
+    lyc: earnAddress,
     factory: factoryAddress,
     launch: "",
     faucet: faucetAddress,

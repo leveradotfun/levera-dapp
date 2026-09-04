@@ -75,6 +75,9 @@ export type LaunchSummary = {
   occupancyPaidUsd: bigint;
   pairingFeesPaidUsd: bigint;
   reserveToken: bigint;
+  /// The AMM pair, once graduated -- zero address before that. Holds the token's own reserve, so
+  /// it must be excluded from a holder count the same way the launch contract itself is.
+  amm: string;
 };
 
 export async function fetchCollateralPriceUsd(oracleAddress: string): Promise<bigint> {
@@ -179,7 +182,7 @@ export async function fetchLaunchSummary(
 
   const toUsdWad = (quoteAmount: bigint) => (quoteAmount * quoteScaleBigint * collateralPrice) / WAD;
 
-  const [name, symbol, creator, graduated, paired, leverageEnabled, raisedCollateral, targetRaiseEth, circulating, priceUsd, tvlUsd, reserveEth, vaultEth, seniorUsd, occupancyPaidUsd, pairingFeesPaidUsd, reserveToken] =
+  const [name, symbol, creator, graduated, paired, leverageEnabled, raisedCollateral, targetRaiseEth, circulating, priceUsd, tvlUsd, reserveEth, vaultEth, seniorUsd, occupancyPaidUsd, pairingFeesPaidUsd, reserveToken, amm] =
     await Promise.all([
       launch.name(),
       launch.symbol(),
@@ -198,6 +201,7 @@ export async function fetchLaunchSummary(
       launch.occupancyPaidUsd() as Promise<bigint>,
       launch.pairingFeesPaidUsd() as Promise<bigint>,
       launch.reserveToken() as Promise<bigint>,
+      launch.amm() as Promise<string>,
     ]);
 
   const stats = await fetchLaunchStats(launchAddress, collateralPrice, creationTime, quoteScaleBigint).catch(
@@ -250,6 +254,7 @@ export async function fetchLaunchSummary(
     occupancyPaidUsd,
     pairingFeesPaidUsd,
     reserveToken,
+    amm,
   };
 }
 
@@ -614,7 +619,7 @@ async function zapUsdgToQuote(
 export async function buy(
   addresses: DeployedAddresses,
   launchAddress: string,
-  payToken: "ETH" | "USDG",
+  payToken: "ETH" | "WETH" | "USDG",
   amountWad: bigint,
   minTokensOut: bigint
 ) {
@@ -625,8 +630,9 @@ export async function buy(
 
     // Paying in USDG means swapping to the launch's quote asset first. The quote is a plain
     // ERC-20 now -- WETH for an ETH-quoted coin, cbBTC for a cbBTC-quoted one -- so a buy is
-    // approve-then-pull, and there is nothing to unwrap. The "ETH" pay label means "the quote
-    // asset": for a WETH coin that arrives via the user's WETH balance, for cbBTC via theirs.
+    // approve-then-pull, and there is nothing to unwrap. The "ETH" pay label means "the launch's
+    // quote asset, wrapped from native at the edge for a WETH coin"; "WETH" means the user's own
+    // WETH ERC-20 balance, spent directly with no wrap.
     const spendQuote = payToken === "USDG" ? await zapUsdgToQuote(addresses, launchAddress, signer, amountWad) : amountWad;
 
     const quoteAddress: string = await launch.quote();
@@ -639,23 +645,39 @@ export async function buy(
 
     const overrides = await walletTxOverrides(address, 2_000_000n);
     let tx;
+    let usedPool = graduated;
     if (payToken === "ETH" && nativeWrap) {
       // "Pay in ETH" made literal: the QuoteZap wraps the native value, forwards to the launch,
       // and refunds anything unspent as native ETH -- no WETH balance or approval involved. The
-      // previous path approved and pulled the user's WETH balance while the UI said ETH.
+      // previous path approved and pulled the user's WETH balance while the UI said ETH. The zap
+      // itself re-reads `graduated()` atomically in the same transaction, so it can't race.
       const zap = new ethers.Contract(addresses.quoteZap!, QuoteZapAbi as ethers.InterfaceAbi, signer);
       tx = await zap.buyWithEth(launchAddress, minTokensOut, { ...overrides, value: spendQuote });
     } else {
       if ((await quote.allowance(address, launchAddress)) < spendQuote) {
         await (await quote.approve(launchAddress, ethers.MaxUint256)).wait();
       }
-      tx = !graduated
-        ? await launch.buy(spendQuote, minTokensOut, overrides)
-        : await launch.buyOnPool(spendQuote, minTokensOut, overrides);
+      if (!graduated) {
+        try {
+          tx = await launch.buy(spendQuote, minTokensOut, overrides);
+        } catch (e) {
+          // The coin can graduate in the gap between the `graduated` read above and this call
+          // landing -- someone else's buy filled the curve first. The quote asset is already in
+          // this wallet (pulled by the USDG zap above, or the caller's own WETH/cbBTC), so retry
+          // against the pool instead of leaving it stranded and the buyer with neither the coin
+          // nor their original asset.
+          const msg = `${(e as { reason?: string })?.reason ?? ""} ${(e as Error)?.message ?? ""}`;
+          if (!/curveclosed|already graduated/i.test(msg)) throw e;
+          tx = await launch.buyOnPool(spendQuote, minTokensOut, overrides);
+          usedPool = true;
+        }
+      } else {
+        tx = await launch.buyOnPool(spendQuote, minTokensOut, overrides);
+      }
     }
     const receipt = await tx.wait();
 
-    const amounts = extractTradeAmounts(receipt, graduated ? "PoolBuy" : "CurveBuy");
+    const amounts = extractTradeAmounts(receipt, usedPool ? "PoolBuy" : "CurveBuy");
     if (amounts) {
       // The launch's OWN oracle and ITS scale: a cbBTC amount is 8 decimals, so both the cbBTC
       // price and the 1e10 lift to WAD are needed -- one without the other is off by orders of
@@ -689,6 +711,7 @@ export async function sell(
     // WETH-quoted coins settle sells as native ETH via the QuoteZap, matching the buy side and
     // the "Sold for X ETH" message; other quotes pay out their own ERC-20.
     let tx;
+    let usedPool = graduated;
     if (addresses.quoteZap && (await launch.quote()).toLowerCase() === addresses.weth.toLowerCase()) {
       const zapAddress = addresses.quoteZap!;
       const meme = new ethers.Contract(
@@ -701,14 +724,24 @@ export async function sell(
       }
       const zap = new ethers.Contract(zapAddress, QuoteZapAbi as ethers.InterfaceAbi, signer);
       tx = await zap.sellForEth(launchAddress, tokensIn, minOut, overrides);
+    } else if (graduated) {
+      tx = await launch.sellOnPool(tokensIn, minOut, overrides);
     } else {
-      tx = graduated
-        ? await launch.sellOnPool(tokensIn, minOut, overrides)
-        : await launch.sell(tokensIn, minOut, overrides);
+      try {
+        tx = await launch.sell(tokensIn, minOut, overrides);
+      } catch (e) {
+        // Same graduation race as buy() -- the coin can graduate between the `graduated` read
+        // above and this call landing. The tokens being sold are untouched by a revert, but retry
+        // against the pool anyway so the trade still fills instead of just failing.
+        const msg = `${(e as { reason?: string })?.reason ?? ""} ${(e as Error)?.message ?? ""}`;
+        if (!/curveclosed|already graduated/i.test(msg)) throw e;
+        tx = await launch.sellOnPool(tokensIn, minOut, overrides);
+        usedPool = true;
+      }
     }
     const receipt = await tx.wait();
 
-    const amounts = extractTradeAmounts(receipt, graduated ? "PoolSell" : "CurveSell");
+    const amounts = extractTradeAmounts(receipt, usedPool ? "PoolSell" : "CurveSell");
     if (amounts) {
       const [collateralPriceUsd, quoteScale] = await Promise.all([
         fetchLaunchCollateralPriceUsd(launchAddress),

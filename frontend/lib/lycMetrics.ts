@@ -26,7 +26,7 @@ export type NavSample = {
 };
 
 export type TrailingApy = {
-  window: "24h" | "7d";
+  window: "24h" | "7d" | "all";
   ready: boolean;
   haveHours: number;
   needHours: number;
@@ -139,8 +139,48 @@ function trailing(samples: NavSample[], windowMs: number, label: "24h" | "7d"): 
   };
 }
 
-export function computeTrailingApy(samples: NavSample[]): { h24: TrailingApy; d7: TrailingApy } {
-  return { h24: trailing(samples, DAY, "24h"), d7: trailing(samples, WEEK, "7d") };
+/// Full history, no 90%-of-window gate -- just enough elapsed time that annualizing isn't pure
+/// noise. A brand-new deployment (or one that just redeployed, which starts the NAV series over)
+/// has no 24h/7d figure for up to a day; this fills that gap with "since launch" instead of a
+/// blank stat, at the cost of being noisier the less history there is.
+function sinceLaunch(samples: NavSample[]): TrailingApy {
+  const empty: TrailingApy = {
+    window: "all",
+    ready: false,
+    haveHours: 0,
+    needHours: 1,
+    nav0: 1,
+    nav1: 1,
+    ret: 0,
+    simpleApr: null,
+    occDelta: 0,
+    cashDelta: 0,
+  };
+  if (samples.length < 2) return empty;
+  const first = samples[0];
+  const last = samples[samples.length - 1];
+  const haveHours = (last.t - first.t) / HOUR;
+  if (haveHours < 1) return { ...empty, haveHours };
+  const nav0 = first.nav > 0 ? first.nav : 1;
+  const nav1 = last.nav > 0 ? last.nav : nav0;
+  const ret = nav1 / nav0 - 1;
+  const years = haveHours / (365.25 * 24);
+  return {
+    window: "all",
+    ready: true,
+    haveHours,
+    needHours: haveHours,
+    nav0,
+    nav1,
+    ret,
+    simpleApr: years > 0 ? ret / years : null,
+    occDelta: last.occ - first.occ,
+    cashDelta: last.cash - first.cash,
+  };
+}
+
+export function computeTrailingApy(samples: NavSample[]): { h24: TrailingApy; d7: TrailingApy; all: TrailingApy } {
+  return { h24: trailing(samples, DAY, "24h"), d7: trailing(samples, WEEK, "7d"), all: sinceLaunch(samples) };
 }
 
 const UPPER = 2.5;

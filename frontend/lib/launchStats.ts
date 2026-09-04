@@ -111,6 +111,15 @@ const launchCache = new Map<string, LaunchCache>();
 /// scan instead of racing it.
 const inFlight = new Map<string, Promise<LaunchStats>>();
 
+/// Every address the coin's own ERC-20 Transfer log has ever named as a recipient, per launch --
+/// the candidate set for "holder", incrementally scanned like the trade log above. Membership here
+/// is permanent (an address that ever received a transfer stays a candidate); whether it still
+/// HOLDS anything is re-checked live via balanceOf in fetchHolderCount, since balances change on
+/// every transfer and this cache only tracks who to ask.
+type HolderCandidateCache = { nextFromBlock: number; addresses: Set<string> };
+const holderCandidateCache = new Map<string, HolderCandidateCache>();
+const TRANSFER_ABI = ["event Transfer(address indexed from, address indexed to, uint256 value)"];
+
 /// Chain state is wiped when Anvil restarts and addresses are reused across deployments, so a
 /// stale cache would otherwise report a previous deployment's trades against a brand-new coin at
 /// the same address.
@@ -118,6 +127,43 @@ export function resetStatsCache() {
   blockTimeCache.clear();
   launchCache.clear();
   creationCache.clear();
+  holderCandidateCache.clear();
+}
+
+/// Real holder count: everyone who has ever received a transfer of this coin AND still has a
+/// nonzero balance right now -- not "unique buyers ∪ sellers in the last 24h", which double-counts
+/// anyone who both bought and sold, misses anyone who bought more than 24h ago and never sold, and
+/// still counts someone who sold their entire position in the last 24h.
+///
+/// `exclude` should list addresses that hold the coin's own supply without being a "holder" in the
+/// community sense -- the launch contract itself (reserveToken sits at balanceOf(address(this))
+/// pre- and post-graduation) and its AMM pair.
+export async function fetchHolderCount(launchAddress: string, exclude: string[] = []): Promise<number> {
+  const key = launchAddress.toLowerCase();
+  const provider = getProvider();
+  let cache = holderCandidateCache.get(key);
+  if (!cache) {
+    cache = { nextFromBlock: scanStartBlock, addresses: new Set() };
+    holderCandidateCache.set(key, cache);
+  }
+  const head = await provider.getBlockNumber();
+  if (cache.nextFromBlock <= head) {
+    const token = new ethers.Contract(launchAddress, TRANSFER_ABI, provider);
+    const logs = await token.queryFilter(token.filters.Transfer(), cache.nextFromBlock, head);
+    for (const log of logs) {
+      const to = (log as ethers.EventLog).args?.to as string | undefined;
+      if (to && to !== ethers.ZeroAddress) cache.addresses.add(to.toLowerCase());
+    }
+    cache.nextFromBlock = head + 1;
+  }
+
+  const excludeSet = new Set(exclude.map((a) => a.toLowerCase()));
+  const candidates = [...cache.addresses].filter((a) => !excludeSet.has(a));
+  if (candidates.length === 0) return 0;
+
+  const token = new ethers.Contract(launchAddress, ["function balanceOf(address) view returns (uint256)"], provider);
+  const balances = await Promise.all(candidates.map((a) => token.balanceOf(a).catch(() => 0n)));
+  return balances.filter((b) => b > 0n).length;
 }
 
 /// The trade log already scanned for a launch. Lets the analytics page aggregate across every coin

@@ -7,3 +7,7 @@
 !.env.example
 
 node_modules/
+
+# LaunchAgent log for the oracle-refresh cron (see ~/Library/LaunchAgents/com.levera.testnet-refresh-prices.plist)
+refresh-prices.log
+keeper.log

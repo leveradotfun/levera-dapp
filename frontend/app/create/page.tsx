@@ -29,6 +29,7 @@ export default function CreatePage() {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [description, setDescription] = useState("");
   const [website, setWebsite] = useState("");
   const [telegram, setTelegram] = useState("");
   const [discord, setDiscord] = useState("");
@@ -111,6 +112,13 @@ export default function CreatePage() {
     ? Number(previewCreatorBuy(quote.targetRaise, 0n, quote.creatorBuyCapBps).capTokens / 10n ** 18n).toLocaleString()
     : null;
 
+  // Creating a coin itself never charges a protocol fee -- the only thing you actually spend is
+  // the optional first buy (at the same curve price and 1.00% fee any other buyer pays), plus gas.
+  const willPayLabel =
+    buyInWad > 0n && quote
+      ? `${formatQuote(buyInWad, quote.decimals, Math.min(quote.decimals, 6))} ${quoteName} + gas`
+      : "Just gas — creation itself is free";
+
   async function submit() {
     if (!addresses) {
       setError("No deployment found. Deploy the contracts from the local console first.");
@@ -148,8 +156,8 @@ export default function CreatePage() {
         TX_TIMEOUT_LONG_MS,
         "Creating coin",
       );
-      // Persist off-chain metadata (Arweave image + website/socials) for display
-      if (imageUrl || website.trim() || telegram.trim() || discord.trim()) {
+      // Persist off-chain metadata (Arweave image + description + socials) for display
+      if (imageUrl || description.trim() || website.trim() || telegram.trim() || discord.trim()) {
         try {
           await fetch("/api/token-metadata", {
             method: "POST",
@@ -157,6 +165,7 @@ export default function CreatePage() {
             body: JSON.stringify({
               launch: launchAddress,
               imageUrl: imageUrl || null,
+              description: description.trim() || null,
               website: website.trim() || null,
               telegram: telegram.trim() || null,
               discord: discord.trim() || null,
@@ -177,16 +186,18 @@ export default function CreatePage() {
     }
   }
 
+  const [linksOpen, setLinksOpen] = useState(false);
+
   return (
-    <div className="mx-auto w-full max-w-5xl py-6">
-      <Link href="/" className="mb-4 inline-flex items-center gap-1.5 text-xs text-muted hover:text-foreground">
+    <div className="mx-auto w-full max-w-5xl py-2">
+      <Link href="/" className="mb-1.5 inline-flex items-center gap-1.5 text-xs text-muted hover:text-foreground">
         <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
         </svg>
         Back
       </Link>
 
-      <div className="mb-5">
+      <div className="mb-2">
         <h1 className="text-lg font-bold text-foreground">Launch a coin</h1>
         <p className="text-xs text-muted mt-0.5">
           Bonding curve first. Check 2x to pair against LYC at graduation, or leave it off for a
@@ -197,8 +208,8 @@ export default function CreatePage() {
       {/* Two columns side by side instead of one long stack -- this page has the width to spare,
           and splitting "what you're creating" from "how it's configured" means both fit on screen
           together instead of the settings being scrolled out of view below the fold. */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
-        <div className="space-y-4 rounded-2xl border border-border bg-card p-6">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 lg:items-start">
+        <div className="space-y-2.5 rounded-2xl border border-border bg-card p-4">
           <div className="text-[10px] uppercase tracking-wide text-muted">Coin details</div>
 
           {quotes.length > 0 ? (
@@ -250,18 +261,33 @@ export default function CreatePage() {
             </Field>
           </div>
 
+          <div className="space-y-1">
+            <div className="flex items-baseline justify-between">
+              <span className="text-xs text-muted">Description (optional)</span>
+              <span className="font-mono text-[10px] text-muted">{description.length}/500</span>
+            </div>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="What is this coin about?"
+              maxLength={500}
+              rows={1}
+              className="w-full resize-none rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
+            />
+          </div>
+
           {/* Token image — stored on Arweave (permanent, content-addressed) */}
           <div className="space-y-1">
             <div className="text-xs text-muted">Token image (Arweave, permanent)</div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5">
               {imagePreview ? (
-                <img src={imagePreview} alt="preview" className="h-16 w-16 rounded-xl object-cover border border-border" />
+                <img src={imagePreview} alt="preview" className="h-11 w-11 rounded-lg object-cover border border-border" />
               ) : (
-                <div className="h-16 w-16 rounded-xl border border-dashed border-border bg-surface flex items-center justify-center text-[10px] text-muted">
+                <div className="h-11 w-11 rounded-lg border border-dashed border-border bg-surface flex items-center justify-center text-[9px] text-muted">
                   No image
                 </div>
               )}
-              <label className={`cursor-pointer rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${uploading ? "border-border bg-surface text-muted" : "border-border bg-surface text-foreground hover:border-accent"}`}>
+              <label className={`cursor-pointer rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${uploading ? "border-border bg-surface text-muted" : "border-border bg-surface text-foreground hover:border-accent"}`}>
                 {uploading ? "Uploading…" : imageUrl ? "Change image" : "Upload image"}
                 <input
                   type="file"
@@ -274,37 +300,54 @@ export default function CreatePage() {
                   disabled={uploading}
                 />
               </label>
-              {imageUrl ? <span className="text-[11px] text-green truncate max-w-[160px]">✓ {imageUrl}</span> : null}
+              {imageUrl ? <span className="text-[11px] text-green truncate max-w-[120px]">✓ uploaded</span> : null}
             </div>
-            <p className="text-[11px] text-muted">PNG/JPG/WebP/GIF/SVG, max 5MB. Stored via Arweave (content-addressed, permanent).</p>
           </div>
 
-          <div className="space-y-3">
-            <div className="text-xs text-muted">Links (optional)</div>
-            <Field label="Website">
-              <input
-                value={website}
-                onChange={(e) => setWebsite(e.target.value)}
-                placeholder="https://..."
-                className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
-              />
-            </Field>
-            <Field label="Telegram">
-              <input
-                value={telegram}
-                onChange={(e) => setTelegram(e.target.value)}
-                placeholder="https://t.me/... or @handle"
-                className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
-              />
-            </Field>
-            <Field label="Discord">
-              <input
-                value={discord}
-                onChange={(e) => setDiscord(e.target.value)}
-                placeholder="https://discord.gg/..."
-                className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
-              />
-            </Field>
+          {/* Links (optional) -- collapsed by default so three rarely-filled fields don't cost
+              vertical space on every visit; a launch with none of them is entirely normal. */}
+          <div>
+            <button
+              type="button"
+              onClick={() => setLinksOpen((o) => !o)}
+              className="flex w-full items-center justify-between text-xs text-muted hover:text-foreground"
+            >
+              <span>
+                Links <span className="opacity-70">(optional)</span>
+                {!linksOpen && (website || telegram || discord) ? <span className="ml-1.5 text-accent">· added</span> : null}
+              </span>
+              <svg className={`h-3.5 w-3.5 transition-transform ${linksOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {linksOpen ? (
+              <div className="mt-2 space-y-2">
+                <Field label="Website">
+                  <input
+                    value={website}
+                    onChange={(e) => setWebsite(e.target.value)}
+                    placeholder="https://..."
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
+                  />
+                </Field>
+                <Field label="Telegram">
+                  <input
+                    value={telegram}
+                    onChange={(e) => setTelegram(e.target.value)}
+                    placeholder="https://t.me/... or @handle"
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
+                  />
+                </Field>
+                <Field label="Discord">
+                  <input
+                    value={discord}
+                    onChange={(e) => setDiscord(e.target.value)}
+                    placeholder="https://discord.gg/..."
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
+                  />
+                </Field>
+              </div>
+            ) : null}
           </div>
 
           {/* Optional first buy, offered at creation. Deliberately framed as
@@ -341,16 +384,8 @@ export default function CreatePage() {
               <span className="shrink-0 font-mono text-xs text-muted">{quoteName}</span>
             </div>
             <p className="text-[11px] leading-relaxed text-muted">
-              Optional, but buying a little first means you&apos;re ahead of the snipers rather than
-              behind them. Same curve price and same 1.00% fee as any other buyer — creating a coin
-              doesn&apos;t buy it cheaper.
-              {capTokensLabel ? (
-                <>
-                  {" "}Capped at {capTokensLabel} tokens
-                  ({(Number(quote!.creatorBuyCapBps) / 100).toFixed(0)}% of supply) —
-                  buying past it is refused before you spend anything.
-                </>
-              ) : null}
+              Same curve price and 1.00% fee as any other buyer, capped at {capTokensLabel ?? "…"} tokens
+              ({quote ? (Number(quote.creatorBuyCapBps) / 100).toFixed(0) : "20"}% of supply).
             </p>
             {exceedsCap && devBuyPreview ? (
               <p className="text-[11px] leading-relaxed text-red">
@@ -359,15 +394,10 @@ export default function CreatePage() {
               </p>
             ) : null}
           </div>
-
-          <p className="text-[11px] leading-relaxed text-muted">
-            You earn <span className="text-accent">0.50%</span> of every trade on your coin, forever,
-            paid in {quoteName}.
-          </p>
         </div>
 
-        <div className="space-y-4">
-          <div className="space-y-3 rounded-2xl border border-border bg-card p-6">
+        <div className="space-y-2.5">
+          <div className="space-y-2 rounded-2xl border border-border bg-card p-4">
             <div className="text-[10px] uppercase tracking-wide text-muted">Launch settings</div>
 
             {/* Protocol settings, shown for transparency but not editable -- these define what the
@@ -445,6 +475,10 @@ export default function CreatePage() {
                 label="Your fee"
                 value={leverageEnabled && feeInHfyc ? "0.50% in LYC" : `0.50% in ${quoteName}`}
               />
+              <div className="mt-1.5 flex items-center justify-between border-t border-border pt-1.5 text-xs">
+                <span className="font-semibold text-foreground">You&apos;ll pay</span>
+                <span className="font-mono font-semibold text-accent">{willPayLabel}</span>
+              </div>
             </div>
           </div>
 

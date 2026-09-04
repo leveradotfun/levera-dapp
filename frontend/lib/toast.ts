@@ -3,7 +3,10 @@
 // call site.
 
 export type ToastKind = "success" | "error" | "info";
-export type ToastItem = { id: number; kind: ToastKind; message: string; timestamp: number };
+/// `message` is the title line ("Swap confirmed", "Minted LYC"); `detail` is an optional second
+/// line with the specifics ("0.5 ETH → 128,400 RHDOGE") -- a one-line "Minted LYC" on its own
+/// tells you nothing you didn't already know you were about to do.
+export type ToastItem = { id: number; kind: ToastKind; message: string; detail?: string; timestamp: number };
 
 let idCounter = 0;
 let toasts: ToastItem[] = [];
@@ -13,8 +16,8 @@ function emit() {
   for (const l of listeners) l(toasts);
 }
 
-export function pushToast(kind: ToastKind, message: string, durationMs = 6000): number {
-  const item: ToastItem = { id: ++idCounter, kind, message, timestamp: Date.now() };
+export function pushToast(kind: ToastKind, message: string, detail?: string, durationMs = 6000): number {
+  const item: ToastItem = { id: ++idCounter, kind, message, detail, timestamp: Date.now() };
   toasts = [...toasts, item];
   emit();
   if (durationMs > 0) setTimeout(() => dismissToast(item.id), durationMs);
@@ -42,6 +45,7 @@ export function subscribeToasts(listener: (items: ToastItem[]) => void) {
 
 const KNOWN_REASONS: [RegExp, string][] = [
   [/already graduated/i, "This coin has already graduated — trade it on the live market instead."],
+  [/curveclosed/i, "This coin graduated to the live market just as your trade landed — retry and it'll fill there instead."],
   [/not graduated/i, "This coin hasn't graduated yet — trade it on the bonding curve instead."],
   [/sold out, call graduate/i, "The curve is sold out — waiting on graduation before more buys."],
   [/slippage/i, "Price moved more than your slippage tolerance allowed — try again or raise the tolerance."],
@@ -95,16 +99,16 @@ export function humanizeError(err: unknown, fallback = "Something went wrong."):
 
 export function toastError(err: unknown, fallback = "Something went wrong.") {
   console.error(err);
-  pushToast("error", humanizeError(err, fallback));
+  pushToast("error", "Transaction failed", humanizeError(err, fallback));
   import("./sessionLog")
     .then((m) => m.logError(fallback.replace(/\.$/, ""), err))
     .catch(() => {});
 }
 
-export function toastSuccess(message: string) {
-  pushToast("success", message);
+export function toastSuccess(message: string, detail?: string) {
+  pushToast("success", message, detail);
 }
 
-export function toastInfo(message: string) {
-  pushToast("info", message);
+export function toastInfo(message: string, detail?: string) {
+  pushToast("info", message, detail);
 }

@@ -17,7 +17,11 @@ export type WalletBalances = {
 
 /// Left behind on MAX so the next tx still has gas. Shared so the header, the trade card, create,
 /// and LYC never disagree about how much "ETH" is spendable.
-export const GAS_RESERVE = 5n * 10n ** 16n; // 0.05 ETH
+///
+/// 0.05 ETH assumes mainnet-scale gas costs. Robinhood Chain testnet prices gas at ~0.01 gwei, so a
+/// 2M-gas mint/buy costs on the order of 0.00002 ETH -- and the faucet only grants 0.001 ETH/day, so
+/// the mainnet reserve alone zeroed out almost every testnet wallet's displayed "spendable" ETH.
+export const GAS_RESERVE = TARGETING_TESTNET ? 2n * 10n ** 14n : 5n * 10n ** 16n; // 0.0002 ETH testnet, 0.05 ETH otherwise
 
 export function spendableEth(native: bigint, reserve: bigint = GAS_RESERVE): bigint {
   return native > reserve ? native - reserve : 0n;
