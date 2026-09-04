@@ -18,10 +18,12 @@ export const metadata: Metadata = {
   title: "Levera - First leveraged memecoin launchpad",
   description: "Leveraged memecoin launchpad",
   openGraph: {
+    type: "website",
+    siteName: "Levera",
     title: "Levera - First leveraged memecoin launchpad",
     description: "Leveraged memecoin launchpad",
     url: "/",
-    images: [{ url: "/og-image.png", width: 800, height: 400 }],
+    images: [{ url: "/og-image.png", width: 800, height: 400, alt: "Levera" }],
   },
   twitter: {
     card: "summary_large_image",
