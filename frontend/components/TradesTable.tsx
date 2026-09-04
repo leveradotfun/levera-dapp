@@ -14,8 +14,8 @@ export interface Trade {
   /// Rebalance: USD moved (pairing/senior), for the tooltip. The table quotes ETH.
   skimmedUsd?: number;
   newLoopLev?: number;
-  /// Rebalance sub-type: "protect" (deleverage), "relever" (re-lever), "release" (senior reallocation), or "paired" (first senior after graduation)
-  rebalanceType?: "protect" | "relever" | "release" | "paired";
+  /// Rebalance sub-type: "protect" (deleverage), "relever" (re-lever), "release" (senior reallocation), "paired" (first senior after graduation), "netted" (senior moved to a quieter pool), or "reserve" (excess vault collateral moved into the AMM reserve)
+  rebalanceType?: "protect" | "relever" | "release" | "paired" | "netted" | "reserve";
 }
 
 interface TradesTableProps {
@@ -236,23 +236,25 @@ export default function TradesTable({
                   })()}
                 </td>
                 <td className={`py-2.5 px-3 font-medium ${
-                  t.type === "buy" ? "text-green" : t.type === "sell" ? "text-red" : t.rebalanceType === "relever" || t.rebalanceType === "paired" ? "text-green" : "text-red"
+                  t.type === "buy" ? "text-green" : t.type === "sell" ? "text-red" : t.rebalanceType === "relever" || t.rebalanceType === "paired" ? "text-green" : t.rebalanceType === "reserve" ? "text-blue-400" : "text-red"
                 }`}>
-                  {t.type === "buy" ? "Buy" : t.type === "sell" ? "Sell" : t.rebalanceType === "protect" ? "Delever" : t.rebalanceType === "relever" ? "Relever" : t.rebalanceType === "release" ? "Peel" : t.rebalanceType === "paired" ? "Paired" : "Rebalance"}
+                  {t.type === "buy" ? "Buy" : t.type === "sell" ? "Sell" : t.rebalanceType === "protect" ? "Delever" : t.rebalanceType === "relever" ? "Relever" : t.rebalanceType === "release" ? "Peel" : t.rebalanceType === "paired" ? "Paired" : t.rebalanceType === "netted" ? "Net" : t.rebalanceType === "reserve" ? "Reserve" : "Rebalance"}
                 </td>
                 <td className="text-right py-2.5 px-3 text-foreground font-mono">
                   {t.type === "rebalance" ? (
                     <span
-                      className={t.rebalanceType === "relever" || t.rebalanceType === "paired" ? "text-green" : "text-red"}
+                      className={t.rebalanceType === "relever" || t.rebalanceType === "paired" ? "text-green" : t.rebalanceType === "reserve" ? "text-blue-400" : "text-red"}
                       title={
                         t.rebalanceType === "protect" ? `Vault ${quoteSymbol} sold for USDG — leverage down` :
                         t.rebalanceType === "relever" ? "Idle USDG bought vault collateral — leverage up" :
                         t.rebalanceType === "release" ? `Vault ${quoteSymbol} sold, senior moved to a louder coin` :
                         t.rebalanceType === "paired" ? `First senior paired after graduation — ${t.skimmedUsd ? `$${t.skimmedUsd.toFixed(2)}` : ""} attached at ${t.newLoopLev?.toFixed(2) ?? "2.00"}x (LYC → pool, traced via 0x81B4…)` :
+                        t.rebalanceType === "netted" ? `Senior claim netted away to a quieter coin — ${t.skimmedUsd ? `$${t.skimmedUsd.toFixed(2)}` : ""} moved, leverage now ${t.newLoopLev?.toFixed(2) ?? "?"}x` :
+                        t.rebalanceType === "reserve" ? `Excess vault ${quoteSymbol} moved into the AMM reserve — sell route backing topped up, leverage unchanged` :
                         "Protocol operation"
                       }
                     >
-                      {`${t.rebalanceType === "relever" || t.rebalanceType === "paired" ? "+" : "−"}${formatQuoteAmount(t.amount, quoteDecimals)} ${quoteSymbol}`}
+                      {`${t.rebalanceType === "relever" || t.rebalanceType === "paired" || t.rebalanceType === "reserve" ? "+" : "−"}${formatQuoteAmount(t.amount, quoteDecimals)} ${quoteSymbol}`}
                     </span>
                   ) : (
                     formatQuoteAmount(t.amount, quoteDecimals)

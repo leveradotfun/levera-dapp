@@ -24,7 +24,7 @@ export interface Trade {
   skimmedUsd?: number;
   newLoopLev?: number;
   /// Rebalance sub-type
-  rebalanceType?: "protect" | "relever" | "release" | "paired";
+  rebalanceType?: "protect" | "relever" | "release" | "paired" | "netted" | "reserve";
 }
 
 /// Trade history for a launch, read from the shared scan in lib/launchStats.ts.

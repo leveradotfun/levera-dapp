@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useAppState } from "@/lib/appState";
 import { EMPTY_ANALYTICS, PlatformAnalytics, fetchPlatformAnalytics } from "@/lib/analytics";
 import { usdCompact } from "@/lib/launchpad";
+import { timeAgo } from "@/lib/utils";
+import { useXHandles } from "@/lib/xHandles";
 import PriceLabel from "@/components/PriceLabel";
 import DailyBarChart from "@/components/DailyBarChart";
 import { SkeletonRows, SkeletonStat, Skeleton } from "@/components/Skeleton";
@@ -23,6 +25,7 @@ function short(a: string) {
 export default function AnalyticsPage() {
   const router = useRouter();
   const { addresses } = useAppState();
+  const handles = useXHandles();
   const [data, setData] = useState<PlatformAnalytics>(EMPTY_ANALYTICS);
   const [loaded, setLoaded] = useState(false);
 
@@ -93,7 +96,7 @@ export default function AnalyticsPage() {
               <Stat
                 label="Junior — memecoins"
                 value={compactUsd(data.juniorUsd)}
-                sub="takes 100% of the collateral\u2019s move, both ways"
+                sub={"takes 100% of the collateral’s move, both ways"}
               />
             </>
           )}
@@ -173,7 +176,91 @@ export default function AnalyticsPage() {
               title="Token launches"
               subtitle="Recent daily context with the latest completed day highlighted."
               totalValue={`${(data.dailyLaunches.reduce((s, d) => s + d.value, 0)).toLocaleString()}`}
+              valueFormat="count"
             />
+          </>
+        )}
+      </section>
+
+      {/* Market activity: buy/sell pressure + unique traders */}
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {!loaded ? (
+          <>
+            <div className="rounded-xl border border-border bg-card p-5 h-52 animate-pulse" />
+            <div className="rounded-xl border border-border bg-card p-5 h-52 animate-pulse" />
+          </>
+        ) : (
+          <>
+            <PressureChart data={data.dailyPressure} />
+            <DailyBarChart
+              data={data.dailyTraders}
+              title="Unique traders"
+              subtitle="Wallets that traded each day — breadth, not just size."
+              totalValue={`${Math.max(...data.dailyTraders.map((d) => d.value), 0).toLocaleString()}`}
+              color="#22c55e"
+              valueFormat="count"
+            />
+          </>
+        )}
+      </section>
+
+      {/* Protocol rebalances */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">
+          Protocol rebalances
+        </h2>
+        {!loaded ? (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <SkeletonStat />
+            <SkeletonStat />
+            <SkeletonStat />
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <Stat
+                label="Rebalance operations"
+                value={data.rebalances.total.toLocaleString()}
+                sub={`${data.rebalances.last24h} in the last 24h`}
+                accent
+              />
+              <Stat
+                label="Collateral redeployed"
+                value={compactUsd(data.rebalances.usdMoved)}
+                sub="USD moved by every operation, all time"
+              />
+              <Stat
+                label="Latest operation"
+                value={data.rebalances.lastTs ? `${timeAgo(data.rebalances.lastTs)} ago` : "—"}
+                sub="keeper + permissionless netting, decoded from Launch logs"
+              />
+            </div>
+            {data.rebalances.total > 0 ? (
+              <div className="rounded-xl border border-border bg-card p-4">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
+                  {(
+                    [
+                      ["paired", "Paired", "text-green"],
+                      ["relever", "Relever", "text-green"],
+                      ["reserve", "Reserve", "text-blue-400"],
+                      ["protect", "Delever", "text-red"],
+                      ["release", "Peel", "text-red"],
+                      ["netted", "Net", "text-red"],
+                    ] as const
+                  ).map(([key, label, color]) => (
+                    <span key={key} className={`font-mono ${color}`}>
+                      {label} <span className="text-foreground">{data.rebalances.counts[key]}</span>
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-2 text-[11px] leading-relaxed text-muted">
+                  Position maintenance across every coin: pairing attaches senior after
+                  graduation, relever buys collateral back, delever/peel/net sell or move it, and
+                  reserve moves idle vault collateral where sellers can reach it. The same decoded
+                  events the coin pages list, counted platform-wide.
+                </p>
+              </div>
+            ) : null}
           </>
         )}
       </section>
@@ -191,8 +278,8 @@ export default function AnalyticsPage() {
             </>
           ) : (
           <>
-          <Stat label="Total volume" value={compactUsd(data.totalVolumeUsd)} sub="all coins, all time" accent />
-          <Stat label="24h volume" value={compactUsd(data.volume24hUsd)} sub={`${data.totalTrades.toLocaleString()} trades all time`} />
+          <Stat label="Total volume" value={compactUsd(data.totalVolumeUsd)} sub={`${data.totalTrades.toLocaleString()} trades all time`} accent />
+          <Stat label="24h volume" value={compactUsd(data.volume24hUsd)} sub={`${data.trades24h.toLocaleString()} trades in the window`} />
           <Stat
             label="Active traders (24h)"
             value={data.activeTraders24h.toLocaleString()}
@@ -204,6 +291,10 @@ export default function AnalyticsPage() {
             sub={`${data.totalGraduated} graduated${
               data.totalLaunches > 0
                 ? ` · ${((data.totalGraduated / data.totalLaunches) * 100).toFixed(0)}%`
+                : ""
+            }${
+              data.medianGraduationHours !== null
+                ? ` · median grad ${data.medianGraduationHours >= 24 ? `${(data.medianGraduationHours / 24).toFixed(1)}d` : `${data.medianGraduationHours.toFixed(1)}h`}`
                 : ""
             }`}
           />
@@ -224,7 +315,7 @@ export default function AnalyticsPage() {
             </>
           ) : (
           <>
-          <Stat label="Total trading fees" value={compactUsd(totalFees)} sub="1.00% of every trade — 50% creator, rest split protocol/LYC" accent />
+          <Stat label="Total trading fees" value={compactUsd(totalFees)} sub={totalFees > 0 && data.totalVolumeUsd > 0 ? `1.00% of every trade — reads ${(totalFees / data.totalVolumeUsd * 100).toFixed(2)}% of all-time volume` : "1.00% of every trade — 50% creator, rest split protocol/LYC"} accent />
           <Stat
             label="Protocol fees"
             value={compactUsd(data.protocolFeesUsd)}
@@ -300,13 +391,14 @@ export default function AnalyticsPage() {
             <Empty>No coins launched yet.</Empty>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-border bg-card">
-              <table className="w-full min-w-[520px] text-sm">
+              <table className="w-full min-w-[600px] text-sm">
                 <thead>
                   <tr className="border-b border-border text-xs uppercase text-muted">
                     <th className="px-4 py-2.5 text-left font-medium">Coin</th>
                     <th className="px-4 py-2.5 text-right font-medium">Price</th>
                     <th className="px-4 py-2.5 text-right font-medium">Market cap</th>
                     <th className="px-4 py-2.5 text-right font-medium">24h vol</th>
+                    <th className="px-4 py-2.5 text-right font-medium">24h</th>
                     <th className="px-4 py-2.5 text-right font-medium">Status</th>
                   </tr>
                 </thead>
@@ -327,6 +419,16 @@ export default function AnalyticsPage() {
                         <td className="px-4 py-3 text-right font-mono text-foreground">{usdCompact(l.marketCapUsd)}</td>
                         <td className="px-4 py-3 text-right font-mono text-foreground">
                           {compactUsd(l.stats.volume24hUsd)}
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono">
+                          {l.stats.change24h === null ? (
+                            <span className="text-muted">—</span>
+                          ) : (
+                            <span className={l.stats.change24h >= 0 ? "text-green" : "text-red"}>
+                              {l.stats.change24h >= 0 ? "+" : ""}
+                              {l.stats.change24h.toFixed(1)}%
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-right">
                           {l.graduated ? (
@@ -366,25 +468,35 @@ export default function AnalyticsPage() {
             <Empty>No realized P&amp;L yet — nobody has sold.</Empty>
           ) : (
             <div className="divide-y divide-border/50 rounded-xl border border-border bg-card">
-              {data.topPnl.map((t, i) => (
-                <div key={t.address} className="flex items-center gap-3 px-4 py-3">
-                  <span className="w-4 shrink-0 text-xs text-muted">{i + 1}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-mono text-xs text-foreground">{short(t.address)}</div>
-                    <div className="font-mono text-[10px] text-muted">
-                      {t.trades} trades · {compactUsd(t.volumeUsd)} vol
-                    </div>
-                  </div>
-                  <span
-                    className={`shrink-0 font-mono text-sm font-semibold ${
-                      t.realizedUsd >= 0 ? "text-green" : "text-red"
-                    }`}
+              {data.topPnl.map((t, i) => {
+                const handle = handles.get(t.address.toLowerCase());
+                return (
+                  <div
+                    key={t.address}
+                    onClick={() => router.push(`/profile/${t.address}`)}
+                    title="View profile"
+                    className="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-hover"
                   >
-                    {t.realizedUsd >= 0 ? "+" : "−"}
-                    {compactUsd(Math.abs(t.realizedUsd))}
-                  </span>
-                </div>
-              ))}
+                    <span className="w-4 shrink-0 text-xs text-muted">{i + 1}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-mono text-xs text-foreground">
+                        {handle ? <span className="font-sans font-semibold">@{handle}</span> : short(t.address)}
+                      </div>
+                      <div className="font-mono text-[10px] text-muted">
+                        {t.trades} trades · {compactUsd(t.volumeUsd)} vol
+                      </div>
+                    </div>
+                    <span
+                      className={`shrink-0 font-mono text-sm font-semibold ${
+                        t.realizedUsd >= 0 ? "text-green" : "text-red"
+                      }`}
+                    >
+                      {t.realizedUsd >= 0 ? "+" : "−"}
+                      {compactUsd(Math.abs(t.realizedUsd))}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           )}
           <p className="text-[11px] leading-relaxed text-muted">
@@ -393,6 +505,68 @@ export default function AnalyticsPage() {
             get is not.
           </p>
         </section>
+      </div>
+    </div>
+  );
+}
+
+/// Daily buy-vs-sell volume as one stacked column per day. Same visual grammar as DailyBarChart,
+/// but the split is the point: a tall green day with a stub red one reads instantly as one-sided
+/// demand, which a single total-per-day bar can never show.
+function PressureChart({ data }: { data: PlatformAnalytics["dailyPressure"] }) {
+  if (data.length === 0) return null;
+  const max = Math.max(...data.map((d) => d.buyUsd + d.sellUsd), 1);
+  const totalBuy = data.reduce((s, d) => s + d.buyUsd, 0);
+  const totalSell = data.reduce((s, d) => s + d.sellUsd, 0);
+
+  const fmt = (n: number): string => {
+    if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
+    if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
+    return `$${n.toFixed(2)}`;
+  };
+
+  const labelIndices = new Set<number>([0, Math.floor(data.length / 2), data.length - 1]);
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="mb-4 flex items-start justify-between">
+        <div>
+          <div className="text-lg font-semibold text-foreground">Buy / sell pressure</div>
+          <div className="mt-0.5 text-sm text-muted">Daily volume split by side.</div>
+        </div>
+        <div className="text-right">
+          <div className="text-2xl font-bold text-foreground">{compactUsd(totalBuy + totalSell)}</div>
+          <div className="mt-0.5 text-[10px] text-muted">
+            <span className="text-green">■ buys {compactUsd(totalBuy)}</span>
+            {" · "}
+            <span className="text-red">■ sells {compactUsd(totalSell)}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex h-32 items-end gap-[3px]">
+        {data.map((d, i) => {
+          const total = d.buyUsd + d.sellUsd;
+          const isLast = i === data.length - 1;
+          const buyH = total > 0 ? (d.buyUsd / max) * 100 : 0;
+          const sellH = total > 0 ? (d.sellUsd / max) * 100 : 0;
+          return (
+            <div key={i} className="flex h-full flex-1 flex-col items-center justify-end" title={`${d.date} · buys ${fmt(d.buyUsd)} / sells ${fmt(d.sellUsd)}`}>
+              <div
+                className="w-full rounded-t-sm transition-all duration-300"
+                style={{ height: `${sellH > 0 ? Math.max(sellH, 1.5) : 0}%`, backgroundColor: isLast ? "#ef4444" : "#ef444499" }}
+              />
+              <div
+                className="w-full transition-all duration-300"
+                style={{ height: `${buyH > 0 ? Math.max(buyH, 1.5) : 0}%`, backgroundColor: isLast ? "#22c55e" : "#22c55e99" }}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-2 flex items-center justify-between text-[10px] text-muted">
+        {data.map((d, i) => (labelIndices.has(i) ? <span key={i}>{d.date}</span> : null))}
       </div>
     </div>
   );

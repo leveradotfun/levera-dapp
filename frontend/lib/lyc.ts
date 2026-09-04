@@ -496,6 +496,11 @@ export type LycLot = {
 /// Transaction record for LYC history
 export type LycTx = {
   type: "mint" | "redeem";
+  /// Why this mint exists. The Transfer log alone can't tell a fee payout from a deposit -- both
+  /// are a mint from the zero address -- so the event the same transaction emitted decides it:
+  /// `FeeMint` is a Launch harvest paying creator/protocol fees in LYC, `Minted` is an Earn page
+  /// deposit. Redeems leave this unset.
+  source?: "deposit" | "fees";
   shares: bigint;
   valueUsd: bigint;
   navAtTime: bigint;
@@ -534,6 +539,17 @@ export async function fetchLycPnl(
     h.queryFilter(toFilter, 0) as Promise<ethers.EventLog[]>,
   ]);
 
+  // Which mints are fee payouts: the transactions where EarnPool emitted `FeeMint` for this
+  // holder. Best-effort -- if the scan fails the rows fall back to plain "deposit" mints.
+  const feeMintTxHashes = new Set<string>();
+  try {
+    for (const e of await h.queryFilter(h.filters.FeeMint(holder), 0)) {
+      feeMintTxHashes.add(e.transactionHash.toLowerCase());
+    }
+  } catch {
+    // classification unavailable
+  }
+
   // Combine and sort by block number
   const txs: LycTx[] = [];
 
@@ -557,6 +573,7 @@ export async function fetchLycPnl(
     // and use the value for fee mints. For simplicity, track the shares and current NAV.
     txs.push({
       type: "mint",
+      source: feeMintTxHashes.has(e.transactionHash.toLowerCase()) ? "fees" : "deposit",
       shares,
       valueUsd: shares, // 1:1 at mint (USDG or ETH converted)
       navAtTime: WAD, // minted at $1

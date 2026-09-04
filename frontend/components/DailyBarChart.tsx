@@ -9,9 +9,13 @@ interface DailyBarChartProps {
   totalLabel?: string;
   totalValue?: string;
   color?: string;
+  /// How to render values in the hover tooltip. Defaults to usd for the volume charts; the
+  /// launches/traders charts pass "count" so a day with 3 launches doesn't read as "$3".
+  valueFormat?: "usd" | "count";
 }
 
-function formatValue(n: number): string {
+function formatValue(n: number, format: "usd" | "count" = "usd"): string {
+  if (format === "count") return n.toLocaleString();
   if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(1)}B`;
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
@@ -32,6 +36,7 @@ export default function DailyBarChart({
   totalLabel,
   totalValue,
   color = "#ECE3D1",
+  valueFormat = "usd",
 }: DailyBarChartProps) {
   if (data.length === 0) return null;
 
@@ -69,7 +74,7 @@ export default function DailyBarChart({
             <div
               key={i}
               className="flex-1 flex flex-col items-center justify-end h-full"
-              title={`${d.date}: ${d.value >= 1_000_000 ? `$${(d.value / 1_000_000).toFixed(2)}M` : d.value >= 1_000 ? `$${(d.value / 1_000).toFixed(1)}K` : `$${d.value.toFixed(2)}`}`}
+              title={`${d.date}: ${formatValue(d.value, valueFormat)}`}
             >
               <div
                 className="w-full rounded-t-sm transition-all duration-300"

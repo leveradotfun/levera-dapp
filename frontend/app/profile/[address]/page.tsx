@@ -1232,15 +1232,28 @@ function LycPanel({ global: g, position, pnl }: { global: LycGlobal | null; posi
         <PanelEmpty title="No LYC transactions" hint="Mints and redeems of LYC will show up here." />
       ) : (
         <div className="divide-y divide-border">
-          {history.map((t: LycTx, i) => (
+          {history.map((t: LycTx, i) => {
+            const isFeeMint = t.type === "mint" && t.source === "fees";
+            return (
             <div key={`${t.txHash}-${i}`} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
               <div className="min-w-0">
                 <span
+                  title={
+                    t.type === "mint"
+                      ? isFeeMint
+                        ? "Creator/protocol fees paid in LYC by a pool harvest"
+                        : "Deposit minted on the Earn page"
+                      : "Redeemed LYC"
+                  }
                   className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                    t.type === "mint" ? "bg-green/15 text-green" : "bg-red/15 text-red"
+                    t.type === "mint"
+                      ? isFeeMint
+                        ? "bg-yellow/15 text-yellow"
+                        : "bg-green/15 text-green"
+                      : "bg-red/15 text-red"
                   }`}
                 >
-                  {t.type}
+                  {t.type === "mint" ? (isFeeMint ? "fee mint" : "mint") : "redeem"}
                 </span>
                 <span className="ml-2 text-sm font-semibold text-foreground">{formatWad(t.shares, 4)} LYC</span>
                 <div className="text-xs text-muted">{t.timestamp > 0 ? `${timeAgo(t.timestamp)} ago` : "—"}</div>
@@ -1250,7 +1263,8 @@ function LycPanel({ global: g, position, pnl }: { global: LycGlobal | null; posi
                 <TxLink hash={t.txHash} />
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

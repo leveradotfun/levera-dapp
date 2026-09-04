@@ -28,8 +28,8 @@ export type TradePoint = {
   skimmedUsd?: number;
   /// Rebalance only. The loop leverage the rebalance targeted (Rebalanced.newLoopLev, WAD).
   newLoopLev?: number;
-  /// Rebalance sub-type: "protect" (deleverage), "relever" (re-lever), "release" (senior reallocation), or "paired" (first senior attach after graduation)
-  rebalanceType?: "protect" | "relever" | "release" | "paired";
+  /// Rebalance sub-type: "protect" (deleverage), "relever" (re-lever), "release" (senior reallocation), "paired" (first senior attach after graduation), "netted" (senior claim moved to a quieter pool), or "reserve" (excess vault collateral moved into the AMM reserve)
+  rebalanceType?: "protect" | "relever" | "release" | "paired" | "netted" | "reserve";
 };
 
 /// A real user trade, as opposed to a protocol rebalance. Every aggregate below filters on this.
@@ -91,6 +91,10 @@ export function setScanStartBlock(block: number | undefined | null): void {
 // Per-launch trade log plus the block we've already scanned up to, so each refresh queries only
 // the new blocks instead of re-fetching the coin's entire history every time.
 type LaunchCache = {
+  /// Bump SCAN_VERSION when the event set or parsing changes: an in-session cache scanned before
+  /// the change has no way to backfill the new events, since the incremental scan only ever looks
+  /// forward from nextFromBlock.
+  version: number;
   nextFromBlock: number;
   trades: TradePoint[];
   traders: Set<string>;
@@ -103,6 +107,10 @@ type LaunchCache = {
   quoteScale: bigint;
 };
 const launchCache = new Map<string, LaunchCache>();
+
+/// History of the scan itself: bump when the queried event set or its parsing changes, so caches
+/// created by an older build rescan instead of silently missing the new events.
+const SCAN_VERSION = 2;
 
 /// One scan per launch at a time. Two pollers read this log -- the launch list (every 2s, via
 /// fetchLaunchSummary) and the coin page's activity feed (every 5s) -- and they interleaved: both
@@ -240,7 +248,13 @@ async function fetchLaunchStatsUncoordinated(
   const provider = getProvider();
   const launch = getLaunch(launchAddress, provider);
   const key = launchAddress.toLowerCase();
-  const cached = launchCache.get(key) ?? {
+  let cached = launchCache.get(key);
+  if (cached && cached.version !== SCAN_VERSION) {
+    // Built by an older scan set -- the incremental scan can't backfill, so start over.
+    cached = undefined;
+  }
+  cached ??= {
+    version: SCAN_VERSION,
     nextFromBlock: scanStartBlock,
     trades: [],
     traders: new Set<string>(),
@@ -268,7 +282,7 @@ async function fetchLaunchStatsUncoordinated(
   if (cached.nextFromBlock <= head) {
     try {
       const from = cached.nextFromBlock;
-      const [curveBuys, curveSells, poolBuys, poolSells, protecteds, relevereds, seniorReleaseds, paireds] = await Promise.all([
+      const [curveBuys, curveSells, poolBuys, poolSells, protecteds, relevereds, seniorReleaseds, paireds, reserveRebalances, seniorNetteds] = await Promise.all([
         launch.queryFilter(launch.filters.CurveBuy(), from, head),
         launch.queryFilter(launch.filters.CurveSell(), from, head),
         launch.queryFilter(launch.filters.PoolBuy(), from, head),
@@ -277,9 +291,11 @@ async function fetchLaunchStatsUncoordinated(
         launch.queryFilter(launch.filters.Relevered(), from, head),
         launch.queryFilter(launch.filters.SeniorReleased(), from, head),
         launch.queryFilter(launch.filters.Paired(), from, head),
+        launch.queryFilter(launch.filters.RebalancedToReserve(), from, head),
+        launch.queryFilter(launch.filters.SeniorNetted(), from, head),
       ]);
 
-      const all = [...curveBuys, ...curveSells, ...poolBuys, ...poolSells, ...protecteds, ...relevereds, ...seniorReleaseds, ...paireds].filter(
+      const all = [...curveBuys, ...curveSells, ...poolBuys, ...poolSells, ...protecteds, ...relevereds, ...seniorReleaseds, ...paireds, ...reserveRebalances, ...seniorNetteds].filter(
         (e): e is ethers.EventLog => "args" in e
       );
       // Chronological within the batch: "first vs last price in a window" is only meaningful in
@@ -302,7 +318,7 @@ async function fetchLaunchStatsUncoordinated(
         let type: "buy" | "sell" | "rebalance";
         let skimmedUsd: number | undefined;
         let newLoopLev: number | undefined;
-        let rebalanceType: "protect" | "relever" | "release" | "paired" | undefined;
+        let rebalanceType: "protect" | "relever" | "release" | "paired" | "netted" | "reserve" | undefined;
         switch (name) {
           case "CurveBuy":
             collateral = e.args.ethIn as bigint;
@@ -371,6 +387,28 @@ async function fetchLaunchStatsUncoordinated(
             isBuy = false;
             type = "rebalance";
             rebalanceType = "paired";
+            break;
+          }
+          case "SeniorNetted": {
+            skimmedUsd = Number(e.args.usdMoved as bigint) / 1e18;
+            newLoopLev = Number(e.args.leverageAfter as bigint) / 1e18;
+            collateral = e.args.ethMoved as bigint;
+            tokens = 0n;
+            isBuy = false;
+            type = "rebalance";
+            rebalanceType = "netted";
+            break;
+          }
+          case "RebalancedToReserve": {
+            // No USD field on the event -- value the moved collateral at the current oracle mark.
+            skimmedUsd = collateralUsd(e.args.ethMoved as bigint, collateralPriceUsd, cached.quoteScale);
+            // reserveCoverAfter is a coverage ratio, not a leverage target, and the operation
+            // leaves the position's leverage unchanged -- leave newLoopLev unset.
+            collateral = e.args.ethMoved as bigint;
+            tokens = 0n;
+            isBuy = true;
+            type = "rebalance";
+            rebalanceType = "reserve";
             break;
           }
           default:

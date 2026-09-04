@@ -23,6 +23,28 @@ export type DailyStat = {
   value: number;
 };
 
+/// One day's buy-vs-sell volume split, for the market-pressure chart.
+export type DailyPressure = {
+  date: string;
+  buyUsd: number;
+  sellUsd: number;
+};
+
+/// Platform-wide rebalance activity, aggregated from the same event scan that feeds the coin
+/// pages' trade history (Protected / Relevered / SeniorReleased / Paired / SeniorNetted /
+/// RebalancedToReserve).
+export type RebalanceStats = {
+  /// Executed rebalance operations, all time.
+  total: number;
+  /// USD value of collateral the operations moved (the events' USD legs, summed).
+  usdMoved: number;
+  /// Operations in the last 24h.
+  last24h: number;
+  /// Timestamp (ms) of the most recent operation, null if none recorded.
+  lastTs: number | null;
+  counts: { protect: number; relever: number; release: number; paired: number; netted: number; reserve: number };
+};
+
 export type PlatformAnalytics = {
   /// USD value of every WETH the protocol holds, across every coin. See fetchPlatformAnalytics for
   /// exactly which balances that covers.
@@ -69,6 +91,17 @@ export type PlatformAnalytics = {
   launches: LaunchSummary[];
   dailyVolume: DailyStat[];
   dailyLaunches: DailyStat[];
+  /// Per-day buy vs sell volume, for the market-pressure chart.
+  dailyPressure: DailyPressure[];
+  /// Unique wallets that traded each day.
+  dailyTraders: DailyStat[];
+  /// Protocol rebalance activity across all coins.
+  rebalances: RebalanceStats;
+  /// Individual trades (not volume) in the last 24h.
+  trades24h: number;
+  /// Median hours from a coin's first trade to its graduation pairing, across coins where both
+  /// timestamps are known. Null when no coin has graduated with a readable timeline.
+  medianGraduationHours: number | null;
 };
 
 export const EMPTY_ANALYTICS: PlatformAnalytics = {
@@ -96,6 +129,11 @@ export const EMPTY_ANALYTICS: PlatformAnalytics = {
   launches: [],
   dailyVolume: [],
   dailyLaunches: [],
+  dailyPressure: [],
+  dailyTraders: [],
+  rebalances: { total: 0, usdMoved: 0, last24h: 0, lastTs: null, counts: { protect: 0, relever: 0, release: 0, paired: 0, netted: 0, reserve: 0 } },
+  trades24h: 0,
+  medianGraduationHours: null,
 };
 
 /// Realized P&L per trader, across every coin, derived purely from their own trades.
@@ -145,8 +183,14 @@ export async function fetchPlatformAnalytics(addresses: DeployedAddresses): Prom
   let totalVolumeUsd = 0;
   let volume24hUsd = 0;
   let totalTrades = 0;
+  let trades24h = 0;
   const traders24h = new Set<string>();
   const allTrades: TradePoint[] = [];
+  // Unfiltered: rebalance points are excluded from every trading figure but feed the rebalance
+  // section. TradePoint carries no launch address, so graduation pairing is attributed per launch
+  // here rather than recovered from the flat list.
+  const allPoints: TradePoint[] = [];
+  const pairedFirstTs = new Map<string, number>();
 
   for (const l of launches) {
     // Reuses the per-launch trade log the coin table already built and cached, so the analytics
@@ -156,16 +200,22 @@ export async function fetchPlatformAnalytics(addresses: DeployedAddresses): Prom
     // no traded volume. Counting them put a synthetic "protocol" wallet at the top of the P&L
     // leaderboard with +$3.7B and inflated total volume by ~200x, which in turn broke the one
     // cross-check that makes this page trustworthy -- fees landing at 1.25% of volume.
-    const trades = tradesFor(l.address).filter(isTrade);
+    const points = tradesFor(l.address);
+    const trades = points.filter(isTrade);
     for (const t of trades) {
       totalVolumeUsd += t.volumeUsd;
       totalTrades += 1;
       if (t.ts >= dayAgo) {
         volume24hUsd += t.volumeUsd;
+        trades24h += 1;
         traders24h.add(t.trader);
       }
     }
     allTrades.push(...trades);
+    allPoints.push(...points);
+    // Points are appended in block order, so the first find is the earliest pairing.
+    const firstPaired = points.find((p) => p.type === "rebalance" && p.rebalanceType === "paired");
+    if (firstPaired) pairedFirstTs.set(l.address.toLowerCase(), firstPaired.ts);
   }
 
   // Collateral lives in exactly two places per coin, and TVL is their sum:
@@ -305,6 +355,9 @@ export async function fetchPlatformAnalytics(addresses: DeployedAddresses): Prom
   // Compute daily volume and daily launches for the last 14 days
   const dailyVolumeMap = new Map<string, number>();
   const dailyLaunchesMap = new Map<string, number>();
+  const dailyBuyMap = new Map<string, number>();
+  const dailySellMap = new Map<string, number>();
+  const dailyTraderSets = new Map<string, Set<string>>();
   const DAY_MS = 86_400_000;
   const daysToShow = 14;
   const today = new Date();
@@ -316,29 +369,66 @@ export async function fetchPlatformAnalytics(addresses: DeployedAddresses): Prom
     const key = d.toISOString().slice(0, 10);
     dailyVolumeMap.set(key, 0);
     dailyLaunchesMap.set(key, 0);
+    dailyBuyMap.set(key, 0);
+    dailySellMap.set(key, 0);
+    dailyTraderSets.set(key, new Set());
   }
 
-  // Aggregate volume by day
-  for (const t of allTrades) {
-    const d = new Date(t.ts);
+  const dayKey = (ts: number): string => {
+    const d = new Date(ts);
     d.setHours(0, 0, 0, 0);
-    const key = d.toISOString().slice(0, 10);
+    return d.toISOString().slice(0, 10);
+  };
+
+  // Aggregate volume, buy/sell pressure and unique traders by day
+  for (const t of allTrades) {
+    const key = dayKey(t.ts);
     if (dailyVolumeMap.has(key)) {
       dailyVolumeMap.set(key, (dailyVolumeMap.get(key) ?? 0) + t.volumeUsd);
     }
+    if (dailyBuyMap.has(key)) {
+      if (t.isBuy) dailyBuyMap.set(key, (dailyBuyMap.get(key) ?? 0) + t.volumeUsd);
+      else dailySellMap.set(key, (dailySellMap.get(key) ?? 0) + t.volumeUsd);
+    }
+    dailyTraderSets.get(key)?.add(t.trader);
   }
 
   // Aggregate launches by day (using stats.createdAt if available)
   for (const l of launches) {
     if (l.stats.createdAt) {
-      const d = new Date(l.stats.createdAt);
-      d.setHours(0, 0, 0, 0);
-      const key = d.toISOString().slice(0, 10);
+      const key = dayKey(l.stats.createdAt);
       if (dailyLaunchesMap.has(key)) {
         dailyLaunchesMap.set(key, (dailyLaunchesMap.get(key) ?? 0) + 1);
       }
     }
   }
+
+  // Protocol rebalance activity: every point the coin-page scan already decoded, aggregated.
+  // skimmedUsd is populated for every rebalance sub-type (see launchStats.ts) -- the event's own
+  // USD leg, not fabricated from price.
+  const counts = { protect: 0, relever: 0, release: 0, paired: 0, netted: 0, reserve: 0 };
+  let rebalanceUsdMoved = 0;
+  let rebalancesLast24h = 0;
+  let rebalanceLastTs: number | null = null;
+  for (const p of allPoints) {
+    if (p.type !== "rebalance" || !p.rebalanceType) continue;
+    counts[p.rebalanceType] += 1;
+    rebalanceUsdMoved += p.skimmedUsd ?? 0;
+    if (p.ts >= dayAgo) rebalancesLast24h += 1;
+    if (rebalanceLastTs === null || p.ts > rebalanceLastTs) rebalanceLastTs = p.ts;
+  }
+
+  // Graduation velocity: first trade -> first Paired, per graduated coin. Coins missing either
+  // timestamp are skipped rather than counted as instant.
+  const gradHours: number[] = [];
+  for (const l of launches) {
+    if (!l.graduated || !l.stats.createdAt) continue;
+    const pairedTs = pairedFirstTs.get(l.address.toLowerCase());
+    if (!pairedTs || pairedTs < l.stats.createdAt) continue;
+    gradHours.push((pairedTs - l.stats.createdAt) / 3_600_000);
+  }
+  gradHours.sort((a, b) => a - b);
+  const medianGraduationHours = gradHours.length > 0 ? gradHours[Math.floor(gradHours.length / 2)] : null;
 
   // Convert to arrays, oldest first, with short date labels
   const formatShortDate = (dateStr: string): string => {
@@ -352,6 +442,14 @@ export async function fetchPlatformAnalytics(addresses: DeployedAddresses): Prom
 
   const dailyLaunches: DailyStat[] = Array.from(dailyLaunchesMap.entries())
     .map(([date, value]) => ({ date: formatShortDate(date), value }))
+    .reverse();
+
+  const dailyPressure: DailyPressure[] = Array.from(dailyBuyMap.entries())
+    .map(([date, buyUsd]) => ({ date: formatShortDate(date), buyUsd, sellUsd: dailySellMap.get(date) ?? 0 }))
+    .reverse();
+
+  const dailyTraders: DailyStat[] = Array.from(dailyTraderSets.entries())
+    .map(([date, set]) => ({ date: formatShortDate(date), value: set.size }))
     .reverse();
 
   return {
@@ -379,6 +477,17 @@ export async function fetchPlatformAnalytics(addresses: DeployedAddresses): Prom
     launches,
     dailyVolume,
     dailyLaunches,
+    dailyPressure,
+    dailyTraders,
+    rebalances: {
+      total: counts.protect + counts.relever + counts.release + counts.paired + counts.netted + counts.reserve,
+      usdMoved: rebalanceUsdMoved,
+      last24h: rebalancesLast24h,
+      lastTs: rebalanceLastTs,
+      counts,
+    },
+    trades24h,
+    medianGraduationHours,
   };
 }
 
