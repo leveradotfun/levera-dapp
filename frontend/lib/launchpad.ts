@@ -41,6 +41,15 @@ export function getLaunch(address: string, runner: ethers.Signer | ethers.Provid
   return new ethers.Contract(address, LaunchAbi as ethers.InterfaceAbi, runner);
 }
 
+/// Display name for the pair/quote asset on listing surfaces (home table + cards). Collateral
+/// enters and leaves as native ETH and cbBTC, so a wrapped-native quote (mWETH on testnet,
+/// WETH elsewhere) reads as plain "ETH" -- same wording the coin page already uses via its
+/// wrapsNative check. The raw on-chain symbol still rules anything that touches the ERC-20.
+export function displayQuoteSymbol(quoteSymbol: string): string {
+  const s = quoteSymbol.toUpperCase();
+  return s === "WETH" || s === "MWETH" ? "ETH" : quoteSymbol;
+}
+
 export type LaunchSummary = {
   address: string;
   name: string;

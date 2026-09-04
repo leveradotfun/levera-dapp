@@ -51,6 +51,7 @@ const FACTORY_ABI = [
 ];
 const EARN_ABI = [
   "function isFactory(address) view returns (bool)",
+  "function isTrustedImplementation(address) view returns (bool)",
   "function collateral(address) view returns (address oracle, address router, uint96 a, uint96 b, uint96 c, uint16 capBps, bool enabled, uint128 scale)",
   "function paused() view returns (bool)",
   "function owner() view returns (address)",
@@ -162,7 +163,10 @@ async function main() {
     info("faucet is an EOA (not a contract), as expected", `${record.faucet}${faucetCode !== "0x" ? " -- WARNING: has code, that's unexpected" : ""}`);
   }
 
-  const earn = new ethers.Contract(record.hfyc, EARN_ABI, provider);
+  // deploy.mjs renamed the record key `hfyc` -> `lyc` with the Earn Pool token; read either so a
+  // pre-rename deployment file still verifies.
+  const earnAddress = record.lyc ?? record.hfyc;
+  const earn = new ethers.Contract(earnAddress, EARN_ABI, provider);
 
   console.log("\nLaunchpad authorisation (the bug that broke every cbBTC launch):");
   for (const [label, addr] of [
@@ -177,7 +181,7 @@ async function main() {
   console.log("\nOwnership (whoever holds these keys controls the whole deployment):");
   const owners = {};
   for (const [label, addr, abi] of [
-    ["EarnPool", record.hfyc, EARN_ABI],
+    ["EarnPool", earnAddress, EARN_ABI],
     ["WETH factory", record.factory, FACTORY_ABI],
     ["cbBTC factory", record.cbbtcFactory, FACTORY_ABI],
     ["ETH oracle", record.oracleEth, ORACLE_ABI],
@@ -223,6 +227,18 @@ async function main() {
     const implAddr = await factory.implementation();
     const impl = new ethers.Contract(implAddr, LAUNCH_ABI, provider);
     check("implementation.initialized() is true", await impl.initialized(), implAddr);
+    // The new-gate regression: registerPool rejects any implementation not on the owner-curated
+    // trusted set, and a deployment that forgets setTrustedImplementation reverts every
+    // createLaunch with "untrusted implementation" -- authorised factories notwithstanding.
+    // The new-gate regression: registerPool rejects any implementation not on the owner-curated
+    // trusted set, and a deployment that forgets setTrustedImplementation reverts every
+    // createLaunch with "untrusted implementation" -- authorised factories notwithstanding.
+    const trusted = await earn.isTrustedImplementation(implAddr);
+    check(
+      "implementation is trusted by the Earn Pool (registerPool allowlist)",
+      trusted,
+      trusted ? "" : "deploy wiring is missing setTrustedImplementation(implementation, true)",
+    );
   }
 
   console.log("\nCollateral registry:");

@@ -401,7 +401,7 @@ function TopTradersPanel({
         <div className="divide-y divide-border">
           {visible.map((r, i) => {
             const following = viewerFollowing.has(r.address);
-            const name = handles.get(r.address);
+            const identity = handles.get(r.address);
             return (
               <div key={r.address} className="flex items-center gap-2 py-2">
                 <button
@@ -410,9 +410,24 @@ function TopTradersPanel({
                   title="View profile"
                 >
                   <span className="w-4 shrink-0 font-mono text-[10px] text-muted">{i + 1}</span>
-                  <CoinAvatar address={r.address} size={26} />
+                  {identity?.avatar ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={identity.avatar}
+                      alt={`@${identity.username}`}
+                      width={26}
+                      height={26}
+                      className="shrink-0 rounded-full bg-surface object-cover"
+                      style={{ width: 26, height: 26 }}
+                      onError={(e) => {
+                        e.currentTarget.style.display = "none";
+                      }}
+                    />
+                  ) : (
+                    <CoinAvatar address={r.address} size={26} />
+                  )}
                   <span className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground">
-                    {name ?? shortAddress(r.address)}
+                    {identity ? `@${identity.username}` : shortAddress(r.address)}
                   </span>
                   <span className={`shrink-0 font-mono text-xs font-semibold ${r.profit >= 0 ? "text-green" : "text-red"}`}>
                     {r.profit >= 0 ? "+" : "-"}

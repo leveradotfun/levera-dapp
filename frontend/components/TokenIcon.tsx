@@ -4,6 +4,8 @@
 const TOKEN_LOGOS: Record<string, string> = {
   ETH: "/tokens/eth.svg",
   WETH: "/tokens/weth.svg",
+  // The testnet's wrapped-native token is named mWETH; same asset, same logo.
+  MWETH: "/tokens/weth.svg",
   CBBTC: "/tokens/cbbtc.svg",
   LYC: "/tokens/lyc.svg",
   USDG: "/tokens/usdg.svg",

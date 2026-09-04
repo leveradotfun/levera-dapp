@@ -1,6 +1,7 @@
 "use client";
 
 import { useXHandles } from "@/lib/xHandles";
+import TraderIdentity from "./TraderIdentity";
 
 interface Holder {
   address: string;
@@ -30,27 +31,11 @@ export default function HoldersTable({ holders }: HoldersTableProps) {
           {holders.map((h, i) => (
             <tr key={h.address} className="border-b border-border/50 hover:bg-card transition-colors">
               <td className="py-2.5 px-3 text-xs">
-                {(() => {
-                  const handle = xHandles.get(h.address.toLowerCase());
-                  if (handle) {
-                    return (
-                      <a
-                        href={`https://x.com/${handle}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title={h.address}
-                        className="font-medium text-foreground hover:text-accent transition-colors"
-                      >
-                        @{handle}
-                      </a>
-                    );
-                  }
-                  return (
-                    <span className="font-mono text-secondary" title={h.address}>
-                      {h.address.slice(0, 6)}...{h.address.slice(-4)}
-                    </span>
-                  );
-                })()}
+                <TraderIdentity
+                  address={h.address}
+                  identity={xHandles.get(h.address.toLowerCase())}
+                  linkHandle
+                />
               </td>
               <td className="text-right py-2.5 px-3 text-foreground">
                 {h.balance.toLocaleString("en-US", { maximumFractionDigits: 2 })}

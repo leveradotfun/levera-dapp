@@ -86,6 +86,43 @@ export function artifact(name) {
   return { abi: a.abi, bytecode: a.bytecode };
 }
 
+/// Fills Foundry's `__$<hash>$__` library link placeholders with deployed library addresses.
+///
+/// A public library function (`OracleLib.read(...)`) compiles into a DELEGATECALL whose target
+/// address is only known at deploy time, so the creation bytecode ships with placeholder
+/// characters that are NOT hex — ethers rejects the whole blob with "invalid BytesLike value"
+/// before anything reaches the chain. `bytecode.linkReferences` records the exact byte offset of
+/// every 20-byte slot, keyed by source file and library name; `addresses` maps library name to
+/// deployed address. Hash the UNLINKED bytecode (what the lock file pins) before calling this.
+export function linkLibraries(bytecode, addresses) {
+  const refs = bytecode?.linkReferences ?? {};
+  const raw = bytecode?.object ?? bytecode;
+  if (!Object.keys(refs).length) return raw;
+  // Splice the hex STRING, not a Buffer: Buffer.from(hex) silently stops decoding at the first
+  // non-hex placeholder character, truncating the blob mid-placeholder (observed: a 4,874-byte
+  // contract decoded as 1,565 bytes) and every later write lands on a corrupted buffer.
+  let hex = raw.startsWith("0x") ? raw.slice(2) : raw;
+  for (const libs of Object.values(refs)) {
+    for (const [name, slots] of Object.entries(libs)) {
+      const address = addresses[name];
+      if (!address) throw new Error(`${name} is linked into this contract but no deployed address was supplied`);
+      const clean = address.toLowerCase().replace(/^0x/, "");
+      // Every slot, never just the first: a contract calls the library from many sites, and one
+      // left-over placeholder is a DELEGATECALL to a junk address that reverts deep inside the
+      // call (observed as "Panic due to OUT_OF_MEMORY" on the creation transaction itself).
+      for (const slot of slots) {
+        const at = slot.start * 2;
+        const placeholder = hex.slice(at, at + 40);
+        if (!/^__\$[0-9a-fA-F]+\$__$/.test(placeholder)) {
+          throw new Error(`${name} link slot at byte ${slot.start} does not hold a Foundry placeholder`);
+        }
+        hex = hex.slice(0, at) + clean + hex.slice(at + 40);
+      }
+    }
+  }
+  return "0x" + hex;
+}
+
 const TRANSIENT = /429|rate limit|metadata is not found|missing revert data|timeout|socket hang up|ETIMEDOUT|ECONNRESET/i;
 
 /// Retries a READ-ONLY thunk across the public RPC's rate-limit windows. The Robinhood endpoints
@@ -141,7 +178,19 @@ export async function deployOnce(label, factory, args) {
     throw new Error(`${label}: creation reverted (tx ${tx.hash})`);
   }
   const address = await c.getAddress();
-  const code = await withRetry(`${label} code`, () => factory.runner.provider.getCode(address));
+  // The receipt is proof the creation landed, but the edge endpoint load-balances replicas: the
+  // node that served the receipt and the node the next read lands on can disagree for a few
+  // seconds, and getCode answers successfully with "0x" on the lagging one. withRetry cannot see
+  // that (nothing threw), so poll for the code to appear before declaring the deploy dead.
+  const provider = factory.runner.provider;
+  let code = "0x";
+  for (let attempt = 0; ; attempt++) {
+    code = await withRetry(`${label} code`, () => provider.getCode(address));
+    if (code !== "0x" || attempt >= 5) break;
+    const wait = 3_000 * (attempt + 1);
+    console.log(`  .. ${label} receipt mined but code not visible yet — re-checking in ${wait / 1000}s`);
+    await new Promise((r) => setTimeout(r, wait));
+  }
   if (code === "0x") throw new Error(`${label}: no code at ${address} after deployment`);
   console.log(`  -> ${address}  (${receipt.hash})`);
   return c;

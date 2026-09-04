@@ -5,7 +5,11 @@ import { loadXProfile } from "./xAuth";
 
 const STORAGE_PREFIX = "launchpad-frontend:x-profile:";
 
-export type HandleMap = Map<string, string>; // address lowercase -> username
+/// Everything the UI needs to label a wallet that connected X: the handle and the avatar URL
+/// (empty when X never returned one). Both come straight from the stored/served XProfile.
+export type XIdentity = { username: string; avatar: string };
+
+export type HandleMap = Map<string, XIdentity>; // address lowercase -> identity
 
 function scanLocalHandles(): HandleMap {
   const out: HandleMap = new Map();
@@ -18,8 +22,8 @@ function scanLocalHandles(): HandleMap {
       try {
         const raw = window.localStorage.getItem(k);
         if (!raw) continue;
-        const parsed = JSON.parse(raw) as { username?: string };
-        if (parsed?.username) out.set(addr, parsed.username);
+        const parsed = JSON.parse(raw) as { username?: string; profileImageUrl?: string };
+        if (parsed?.username) out.set(addr, { username: parsed.username, avatar: parsed.profileImageUrl ?? "" });
       } catch {
         // ignore malformed entry
       }
@@ -35,10 +39,12 @@ async function fetchRemoteHandles(): Promise<HandleMap> {
   try {
     const res = await fetch("/api/x-profiles", { cache: "no-store" });
     if (!res.ok) return out;
-    const json = (await res.json()) as { profiles?: Record<string, { username?: string }> };
+    const json = (await res.json()) as {
+      profiles?: Record<string, { username?: string; profileImageUrl?: string }>;
+    };
     const profiles = json.profiles ?? {};
     for (const [addr, p] of Object.entries(profiles)) {
-      if (p?.username) out.set(addr.toLowerCase(), p.username);
+      if (p?.username) out.set(addr.toLowerCase(), { username: p.username, avatar: p.profileImageUrl ?? "" });
     }
   } catch {
     // network hiccup -- fallback to local only
@@ -47,7 +53,7 @@ async function fetchRemoteHandles(): Promise<HandleMap> {
 }
 
 export function getHandleForAddress(address: string, map: HandleMap): string | null {
-  return map.get(address.toLowerCase()) ?? null;
+  return map.get(address.toLowerCase())?.username ?? null;
 }
 
 /// Hook that merges a leftover local cache + the Postgres registry.
@@ -66,7 +72,7 @@ export function useXHandles(): HandleMap {
       // Merge: remote provides cross-user knowledge, local wins if both exist
       // (local is fresher for the current wallet).
       const merged: HandleMap = new Map(remote);
-      for (const [addr, handle] of local) merged.set(addr, handle);
+      for (const [addr, identity] of local) merged.set(addr, identity);
       setMap(merged);
     }
 

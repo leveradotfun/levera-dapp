@@ -9,6 +9,7 @@ import { timeAgo } from "@/lib/utils";
 import { useXHandles } from "@/lib/xHandles";
 import PriceLabel from "@/components/PriceLabel";
 import DailyBarChart from "@/components/DailyBarChart";
+import TraderIdentity from "@/components/TraderIdentity";
 import { SkeletonRows, SkeletonStat, Skeleton } from "@/components/Skeleton";
 
 function compactUsd(n: number): string {
@@ -16,10 +17,6 @@ function compactUsd(n: number): string {
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000) return `$${(n / 1_000).toFixed(2)}K`;
   return `$${n.toFixed(2)}`;
-}
-
-function short(a: string) {
-  return `${a.slice(0, 6)}…${a.slice(-4)}`;
 }
 
 export default function AnalyticsPage() {
@@ -57,16 +54,14 @@ export default function AnalyticsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-foreground">Analytics</h1>
-        <p className="mt-1 max-w-3xl text-sm text-muted">
-          Measured on-chain: every trade is decoded from its own coin&apos;s events and priced
-          through the collateral oracle. Fees are read from the contracts themselves — the record of
-          what was actually charged, including fees already claimed — not inferred from volume.
+        <p className="mt-1 text-sm text-secondary">
+          Independent onchain reporting for Levera markets.
         </p>
       </div>
 
       {/* TVL */}
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Total value locked</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-secondary">Total value locked</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {!loaded ? (
             <>
@@ -101,18 +96,11 @@ export default function AnalyticsPage() {
             </>
           )}
         </div>
-        <p className="text-[11px] leading-relaxed text-muted">
-          Every coin&apos;s collateral (WETH, cbBTC) the protocol holds: each bonding-curve raise
-          before graduation, then its paired pool afterwards. Nothing here is borrowed — leverage comes from pairing
-          against LYC&apos;s senior capital, not from a lending market, so the split shown is
-          senior against junior rather than gross against debt. The two sides sum to TVL plus idle
-          cash by construction.
-        </p>
       </section>
 
       {/* The senior book */}
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-secondary">
           Senior capital — LYC
         </h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -147,13 +135,6 @@ export default function AnalyticsPage() {
             </>
           )}
         </div>
-        <p className="text-[11px] leading-relaxed text-muted">
-          No launch is capped in how much senior it may take. Scarcity is priced instead: the
-          funding rate climbs steeply as utilisation rises, so depositing pays most exactly when the
-          protocol most needs deposits, and the rate settles back on its own as the queue refills.
-          That rate is a cost to memecoin holders — renting leverage should be dear when the capital
-          behind it is scarce.
-        </p>
       </section>
 
       {/* Daily charts */}
@@ -168,13 +149,13 @@ export default function AnalyticsPage() {
             <DailyBarChart
               data={data.dailyVolume}
               title="Trading volume"
-              subtitle="Recent daily context with the latest completed day highlighted."
+              subtitle="Latest completed day highlighted."
               totalValue={compactUsd(data.dailyVolume.reduce((s, d) => s + d.value, 0))}
             />
             <DailyBarChart
               data={data.dailyLaunches}
               title="Token launches"
-              subtitle="Recent daily context with the latest completed day highlighted."
+              subtitle="Latest completed day highlighted."
               totalValue={`${(data.dailyLaunches.reduce((s, d) => s + d.value, 0)).toLocaleString()}`}
               valueFormat="count"
             />
@@ -195,7 +176,7 @@ export default function AnalyticsPage() {
             <DailyBarChart
               data={data.dailyTraders}
               title="Unique traders"
-              subtitle="Wallets that traded each day — breadth, not just size."
+              subtitle="Latest completed day highlighted."
               totalValue={`${Math.max(...data.dailyTraders.map((d) => d.value), 0).toLocaleString()}`}
               color="#22c55e"
               valueFormat="count"
@@ -206,7 +187,7 @@ export default function AnalyticsPage() {
 
       {/* Protocol rebalances */}
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-secondary">
           Protocol rebalances
         </h2>
         {!loaded ? (
@@ -227,12 +208,12 @@ export default function AnalyticsPage() {
               <Stat
                 label="Collateral redeployed"
                 value={compactUsd(data.rebalances.usdMoved)}
-                sub="USD moved by every operation, all time"
+                sub="all-time total"
               />
               <Stat
                 label="Latest operation"
                 value={data.rebalances.lastTs ? `${timeAgo(data.rebalances.lastTs)} ago` : "—"}
-                sub="keeper + permissionless netting, decoded from Launch logs"
+                sub="decoded from Launch logs"
               />
             </div>
             {data.rebalances.total > 0 ? (
@@ -253,12 +234,6 @@ export default function AnalyticsPage() {
                     </span>
                   ))}
                 </div>
-                <p className="mt-2 text-[11px] leading-relaxed text-muted">
-                  Position maintenance across every coin: pairing attaches senior after
-                  graduation, relever buys collateral back, delever/peel/net sell or move it, and
-                  reserve moves idle vault collateral where sellers can reach it. The same decoded
-                  events the coin pages list, counted platform-wide.
-                </p>
               </div>
             ) : null}
           </>
@@ -267,7 +242,7 @@ export default function AnalyticsPage() {
 
       {/* volume + activity */}
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Traded volume</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-secondary">Traded volume</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {!loaded ? (
             <>
@@ -283,7 +258,7 @@ export default function AnalyticsPage() {
           <Stat
             label="Active traders (24h)"
             value={data.activeTraders24h.toLocaleString()}
-            sub="unique wallets that traded"
+            sub="unique wallets"
           />
           <Stat
             label="Coins launched"
@@ -305,7 +280,7 @@ export default function AnalyticsPage() {
 
       {/* trading fees */}
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Trading fees</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-secondary">Trading fees</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {!loaded ? (
             <>
@@ -315,16 +290,16 @@ export default function AnalyticsPage() {
             </>
           ) : (
           <>
-          <Stat label="Total trading fees" value={compactUsd(totalFees)} sub={totalFees > 0 && data.totalVolumeUsd > 0 ? `1.00% of every trade — reads ${(totalFees / data.totalVolumeUsd * 100).toFixed(2)}% of all-time volume` : "1.00% of every trade — 50% creator, rest split protocol/LYC"} accent />
+          <Stat label="Total trading fees" value={compactUsd(totalFees)} sub={totalFees > 0 && data.totalVolumeUsd > 0 ? `1.00% per trade — reads ${(totalFees / data.totalVolumeUsd * 100).toFixed(2)}% of volume` : "1.00% per trade"} accent />
           <Stat
             label="Protocol fees"
             value={compactUsd(data.protocolFeesUsd)}
-            sub="45–50% share, to the treasury"
+            sub="to the treasury"
           />
           <Stat
             label="Creator fees"
             value={compactUsd(data.creatorFeesUsd)}
-            sub="Flat 50% share, paid to coin creators"
+            sub="paid to coin creators"
             tag={loaded ? `${compactUsd(data.creatorFeesUsd - data.claimedCreatorFeesUsd)} claimable` : undefined}
           />
           </>
@@ -332,7 +307,7 @@ export default function AnalyticsPage() {
         </div>
         {totalFees > 0 ? (
           <div className="rounded-xl border border-border bg-card p-4">
-            <div className="mb-2 flex justify-between text-xs text-muted">
+            <div className="mb-2 flex justify-between text-xs text-secondary">
               <span>Protocol {((data.protocolFeesUsd / totalFees) * 100).toFixed(1)}%</span>
               <span>Creators {((data.creatorFeesUsd / totalFees) * 100).toFixed(1)}%</span>
             </div>
@@ -340,11 +315,8 @@ export default function AnalyticsPage() {
               <div className="h-full bg-accent" style={{ width: `${(data.protocolFeesUsd / totalFees) * 100}%` }} />
               <div className="h-full bg-green" style={{ width: `${(data.creatorFeesUsd / totalFees) * 100}%` }} />
             </div>
-            <p className="mt-2 text-[11px] text-muted">
-              &ldquo;Total trading fees&rdquo; above is protocol + creator only — it does not
-              include the up-to-5% LYC slice, which scales with how much senior is paired against
-              each coin and lands as LYC yield instead, not here. See &ldquo;Pairing + harvested
-              fees&rdquo; on the LYC page.
+            <p className="mt-2 text-xs text-secondary">
+              Excludes the up-to-5% LYC slice — that lands as LYC yield, not here.
             </p>
           </div>
         ) : null}
@@ -352,12 +324,7 @@ export default function AnalyticsPage() {
 
       {/* LYC mint/redeem fees */}
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">LYC fees</h2>
-        <p className="text-xs text-muted -mt-1">
-          Separate from trading fees above: charged to LYC depositors and redeemers, not to
-          memecoin traders. Both mint straight to the protocol treasury as liquid LYC — a
-          protocol fee, not a NAV lift shared with every holder.
-        </p>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-secondary">LYC fees</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {!loaded ? (
             <>
@@ -367,7 +334,7 @@ export default function AnalyticsPage() {
             </>
           ) : (
           <>
-          <Stat label="Total LYC fees" value={compactUsd(totalLycFees)} sub="Lifetime, both charged to the treasury" accent />
+          <Stat label="Total LYC fees" value={compactUsd(totalLycFees)} sub="lifetime, to the treasury" accent />
           <Stat label="Mint fees" value={compactUsd(data.lycMintFeesUsd)} sub="0.10% of every LYC deposit" />
           <Stat label="Redeem fees" value={compactUsd(data.lycRedeemFeesUsd)} sub="0.25% of every covered exit" />
           </>
@@ -378,7 +345,7 @@ export default function AnalyticsPage() {
       {/* coins + top pnl */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.6fr_1fr]">
         <section className="space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Coins by volume</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-secondary">Coins by volume</h2>
           {!loaded ? (
             <div className="overflow-hidden rounded-xl border border-border bg-card">
               <table className="w-full text-sm">
@@ -450,7 +417,7 @@ export default function AnalyticsPage() {
         </section>
 
         <section className="space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Top P&amp;L</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-secondary">Top P&amp;L</h2>
           {!loaded ? (
             <div className="divide-y divide-border/50 rounded-xl border border-border bg-card">
               {Array.from({ length: 5 }, (_, i) => (
@@ -469,7 +436,7 @@ export default function AnalyticsPage() {
           ) : (
             <div className="divide-y divide-border/50 rounded-xl border border-border bg-card">
               {data.topPnl.map((t, i) => {
-                const handle = handles.get(t.address.toLowerCase());
+                const identity = handles.get(t.address.toLowerCase());
                 return (
                   <div
                     key={t.address}
@@ -479,10 +446,10 @@ export default function AnalyticsPage() {
                   >
                     <span className="w-4 shrink-0 text-xs text-muted">{i + 1}</span>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate font-mono text-xs text-foreground">
-                        {handle ? <span className="font-sans font-semibold">@{handle}</span> : short(t.address)}
+                      <div className="truncate text-xs text-foreground">
+                        <TraderIdentity address={t.address} identity={identity} size={18} />
                       </div>
-                      <div className="font-mono text-[10px] text-muted">
+                      <div className="font-mono text-[11px] text-secondary">
                         {t.trades} trades · {compactUsd(t.volumeUsd)} vol
                       </div>
                     </div>
@@ -499,10 +466,8 @@ export default function AnalyticsPage() {
               })}
             </div>
           )}
-          <p className="text-[11px] leading-relaxed text-muted">
-            Realized only — cash out minus cash in, from trades alone. A wallet still holding its
-            position isn&apos;t counted as a loss, because what it paid is knowable but what it will
-            get is not.
+          <p className="text-xs text-secondary">
+            Realized only — wallets still holding a position aren&apos;t counted.
           </p>
         </section>
       </div>
@@ -536,7 +501,7 @@ function PressureChart({ data }: { data: PlatformAnalytics["dailyPressure"] }) {
         </div>
         <div className="text-right">
           <div className="text-2xl font-bold text-foreground">{compactUsd(totalBuy + totalSell)}</div>
-          <div className="mt-0.5 text-[10px] text-muted">
+          <div className="mt-0.5 text-xs text-secondary">
             <span className="text-green">■ buys {compactUsd(totalBuy)}</span>
             {" · "}
             <span className="text-red">■ sells {compactUsd(totalSell)}</span>
@@ -565,7 +530,7 @@ function PressureChart({ data }: { data: PlatformAnalytics["dailyPressure"] }) {
         })}
       </div>
 
-      <div className="mt-2 flex items-center justify-between text-[10px] text-muted">
+      <div className="mt-2 flex items-center justify-between text-xs text-secondary">
         {data.map((d, i) => (labelIndices.has(i) ? <span key={i}>{d.date}</span> : null))}
       </div>
     </div>
@@ -587,11 +552,11 @@ function Stat({
 }) {
   return (
     <div className="rounded-xl border border-border bg-card p-4">
-      <div className="text-xs text-muted">{label}</div>
-      <div className={`mt-1 font-mono text-2xl font-semibold ${accent ? "text-accent" : "text-foreground"}`}>
+      <div className="text-xs text-secondary">{label}</div>
+      <div className={`mt-1 font-mono text-3xl font-semibold ${accent ? "text-accent" : "text-foreground"}`}>
         {value}
       </div>
-      {sub ? <div className="mt-0.5 text-[11px] text-muted">{sub}</div> : null}
+      {sub ? <div className="mt-0.5 text-xs text-muted">{sub}</div> : null}
       {tag ? (
         <div className="mt-1.5 inline-block rounded-full bg-surface px-2 py-0.5 text-[10px] font-medium text-green">
           {tag}

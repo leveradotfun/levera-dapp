@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { TxLink } from "./ExplorerLink";
+import TraderIdentity from "./TraderIdentity";
 import { useXHandles } from "@/lib/xHandles";
 
 export interface Trade {
@@ -213,27 +214,13 @@ export default function TradesTable({
                 <td className="py-2.5 px-3 text-xs">
                   {t.type === "rebalance" ? (
                     <span className="font-mono text-accent">protocol</span>
-                  ) : (() => {
-                    const handle = xHandles.get(t.account.toLowerCase());
-                    if (handle) {
-                      return (
-                        <a
-                          href={`https://x.com/${handle}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title={t.account}
-                          className="font-medium text-foreground hover:text-accent transition-colors"
-                        >
-                          @{handle}
-                        </a>
-                      );
-                    }
-                    return (
-                      <span className="font-mono text-secondary" title={t.account}>
-                        {`${t.account.slice(0, 6)}...${t.account.slice(-4)}`}
-                      </span>
-                    );
-                  })()}
+                  ) : (
+                    <TraderIdentity
+                      address={t.account}
+                      identity={xHandles.get(t.account.toLowerCase())}
+                      linkHandle
+                    />
+                  )}
                 </td>
                 <td className={`py-2.5 px-3 font-medium ${
                   t.type === "buy" ? "text-green" : t.type === "sell" ? "text-red" : t.rebalanceType === "relever" || t.rebalanceType === "paired" ? "text-green" : t.rebalanceType === "reserve" ? "text-blue-400" : "text-red"

@@ -88,7 +88,7 @@ export default function DailyBarChart({
         })}
       </div>
 
-      <div className="flex items-center justify-between mt-2 text-[10px] text-muted">
+      <div className="flex items-center justify-between mt-2 text-xs text-secondary">
         {data.map((d, i) =>
           labelIndices.has(i) ? (
             <span key={i}>{d.date}</span>

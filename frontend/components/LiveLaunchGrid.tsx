@@ -1,7 +1,8 @@
 "use client";
 
-import { LaunchSummary, usdCompact } from "@/lib/launchpad";
+import { LaunchSummary, displayQuoteSymbol, usdCompact } from "@/lib/launchpad";
 import PriceLabelRaw from "@/components/PriceLabel";
+import TokenIcon from "@/components/TokenIcon";
 import { timeAgo } from "@/lib/utils";
 
 const PALETTE = ["#ECE3D1", "#22c55e", "#38bdf8", "#f472b6", "#fbbf24", "#a78bfa", "#fb7185", "#34d399"];
@@ -68,21 +69,22 @@ export default function LiveLaunchGrid({
         const targetUsd = Number(l.targetUsd) / 1e18;
         const volumeUsd = l.stats.volume24hUsd;
         const isHot = !l.graduated && (l.pctToGraduation > 50 || (targetUsd > 0 && volumeUsd > targetUsd * 0.5));
-        
-        // The quote asset a coin trades against -- cbBTC or ETH -- belongs on the card: it
-        // changes the raise size, the decimals, and the risk profile, and used to be invisible
-        // until you opened the coin.
-        const quoteBadge = l.quoteSymbol === "cbBTC"
-          ? { label: "cbBTC", cls: "bg-orange-500/15 text-orange-400" }
-          : { label: "ETH", cls: "bg-indigo-400/15 text-indigo-300" };
         const change = l.stats.change24h;
 
         return (
           <button
             key={l.address}
             onClick={() => onSelect(l)}
-            className="group rounded-2xl border border-border bg-card p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-lg hover:shadow-black/40"
+            className="group relative overflow-hidden rounded-2xl border border-border bg-card p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-lg hover:shadow-black/40"
           >
+            {/* Paired-token art, anchor right like the reference card. Behind the content so the
+                right-aligned stats stay readable. */}
+            <TokenIcon
+              symbol={displayQuoteSymbol(l.quoteSymbol)}
+              size={144}
+              className="pointer-events-none absolute -right-10 top-1/2 -translate-y-1/2 opacity-20 transition-opacity duration-200 group-hover:opacity-30"
+            />
+            <div className="relative">
             <div className="flex items-start gap-3">
               <div
                 className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-xl transition-transform group-hover:scale-105"
@@ -98,16 +100,33 @@ export default function LiveLaunchGrid({
                   <span className="truncate font-bold text-foreground text-lg">${l.symbol}</span>
                   {isNew && <SproutIcon />}
                 </div>
-                <div className="flex items-center gap-1.5 text-sm text-muted">
-                  <span className="truncate">{l.name}</span>
-                  <span
-                    className={`shrink-0 rounded px-1 py-px font-mono text-[9px] font-semibold ${quoteBadge.cls}`}
-                    title={`Quote asset: trades, pairs and settles in ${quoteBadge.label}`}
-                  >
-                    {quoteBadge.label}
-                  </span>
-                </div>
+                <div className="truncate text-sm text-muted">{l.name}</div>
               </div>
+            </div>
+
+            {/* Pair token + graduation state -- the two things a scanner can't trade without */}
+            <div className="mt-2.5 flex items-center gap-1.5 text-sm">
+              <span className="text-muted">{l.graduated ? "Paired with" : "Raising in"}</span>
+              <TokenIcon symbol={displayQuoteSymbol(l.quoteSymbol)} size={16} />
+              <span className="font-medium text-foreground">{displayQuoteSymbol(l.quoteSymbol)}</span>
+              {l.graduated ? (
+                <span
+                  className="ml-1 inline-flex shrink-0 items-center gap-1 rounded-full bg-green/15 px-2 py-0.5 text-[10px] font-semibold text-green"
+                  title={l.paired ? "Graduated — paired against LYC senior at 2x" : "Graduated — trading live on the AMM"}
+                >
+                  <svg className="h-2.5 w-2.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.7 5.3a1 1 0 010 1.4l-7.5 7.5a1 1 0 01-1.4 0l-3.5-3.5a1 1 0 111.4-1.4l2.8 2.79 6.8-6.8a1 1 0 011.4 0z" clipRule="evenodd" />
+                  </svg>
+                  Graduated
+                </span>
+              ) : (
+                <span
+                  className="ml-1 inline-flex shrink-0 items-center rounded-full bg-surface px-2 py-0.5 text-[10px] font-semibold text-muted"
+                  title={`On the bonding curve — ${l.pctToGraduation.toFixed(0)}% to graduation`}
+                >
+                  Bonding
+                </span>
+              )}
             </div>
 
             <div className="mt-3 flex items-baseline justify-between">
@@ -171,6 +190,7 @@ export default function LiveLaunchGrid({
                 <span className="ml-auto font-mono text-[10px] text-muted">{usdCompact(l.marketCapUsd)} mcap</span>
               </div>
             )}
+            </div>
           </button>
         );
       })}

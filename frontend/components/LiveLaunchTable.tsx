@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { LaunchSummary, TOTAL_SUPPLY_WAD } from "@/lib/launchpad";
+import { LaunchSummary, TOTAL_SUPPLY_WAD, displayQuoteSymbol } from "@/lib/launchpad";
 
 /// Whole tokens, for the plain-number math in this file. Supply is fixed at mint.
 const TOTAL_SUPPLY = Number(TOTAL_SUPPLY_WAD / 10n ** 18n);
 import PriceLabel from "@/components/PriceLabel";
+import TokenIcon from "@/components/TokenIcon";
 import { timeAgo } from "@/lib/utils";
 
 const PALETTE = ["#ECE3D1", "#22c55e", "#38bdf8", "#f472b6", "#fbbf24", "#a78bfa", "#fb7185", "#34d399"];
@@ -210,11 +211,12 @@ export default function LiveLaunchTable({
     // Horizontal scroll lives on this wrapper so a narrow viewport scrolls the table rather than
     // the whole page.
     <div className="overflow-x-auto rounded-xl border border-border">
-      <table className="w-full min-w-[1000px] text-sm">
+      <table className="w-full min-w-[1080px] text-sm">
         <thead className="bg-surface/50">
           <tr className="border-b border-border">
             <Th label="#" align="left" />
             <Th label="Coin" align="left" />
+            <Th label="Pair" align="left" />
             <Th label="Graph" align="left" />
             <Th label="Mcap" sort="mcap" />
             <Th label="ATH" sort="ath" />
@@ -254,21 +256,24 @@ export default function LiveLaunchTable({
                         <span className="truncate text-sm font-semibold text-foreground">{l.name}</span>
                         <span
                           title={
-                            l.paired
-                              ? "Paired at 2x against LYC"
-                              : l.leverageEnabled
-                                ? "2x enabled"
-                                : "Spot market"
+                            l.graduated
+                              ? `Graduated — trading live on the AMM${l.paired ? " at 2x against LYC senior" : ""}`
+                              : `On the bonding curve — ${l.pctToGraduation.toFixed(0)}% to graduation`
                           }
-                          className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${
-                            l.paired
-                              ? "bg-green/15 text-green"
-                              : l.leverageEnabled
-                                ? "bg-blue-400/15 text-blue-400"
-                                : "bg-surface text-muted"
+                          className={`inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${
+                            l.graduated ? "bg-green/15 text-green" : "bg-surface text-muted"
                           }`}
                         >
-                          {l.paired ? "2x" : l.leverageEnabled ? "2x" : "spot"}
+                          {l.graduated ? (
+                            <>
+                              <svg className="h-2.5 w-2.5" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.7 5.3a1 1 0 010 1.4l-7.5 7.5a1 1 0 01-1.4 0l-3.5-3.5a1 1 0 111.4-1.4l2.8 2.79 6.8-6.8a1 1 0 011.4 0z" clipRule="evenodd" />
+                              </svg>
+                              LIVE
+                            </>
+                          ) : (
+                            "bonding"
+                          )}
                         </span>
                         {isHot && (
                           <span className="shrink-0 rounded-full bg-orange-500/15 text-orange-400 px-1.5 py-0.5 text-[9px] font-semibold animate-vibrate">
@@ -279,6 +284,15 @@ export default function LiveLaunchTable({
                       <div className="font-mono text-xs text-muted">${l.symbol}</div>
                     </div>
                   </div>
+                </td>
+                <td className="px-3 py-3">
+                  <span
+                    className="inline-flex items-center gap-1.5 text-sm text-secondary"
+                    title={l.graduated ? `AMM pair quoted in ${l.quoteSymbol}` : `Bonding-curve raise quoted in ${l.quoteSymbol}`}
+                  >
+                    <TokenIcon symbol={displayQuoteSymbol(l.quoteSymbol)} size={16} />
+                    {displayQuoteSymbol(l.quoteSymbol)}
+                  </span>
                 </td>
                 <td className="px-3 py-3">
                   <Sparkline prices={l.stats.spark} />

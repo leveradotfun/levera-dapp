@@ -55,6 +55,7 @@ import {
   sendTx,
   deployOnce,
   loadEnvFile,
+  linkLibraries,
 } from "./lib/chain.mjs";
 import { fetchPrices } from "./lib/prices.mjs";
 import { requireApprovedArtifacts, hashBytecode } from "./lib/artifactHash.mjs";
@@ -66,6 +67,25 @@ loadEnvFile();
 
 const log = (m) => console.log(m);
 
+/// NonceManager that re-syncs when the edge rejects a nonce. The Goldsky endpoint load-balances
+/// replicas whose views of this account's count disagree — the same send sequence that mined two
+/// transactions fine has had the third answered "nonce has already been used" for a nonce nothing
+/// ever mined. On any nonce-related rejection: drop the cached count, let the next send re-read
+/// it fresh, and retry once with the same tx (the manager overwrites tx.nonce itself).
+class SelfHealingNonceManager extends ethers.NonceManager {
+  async sendTransaction(tx) {
+    try {
+      return await super.sendTransaction(tx);
+    } catch (e) {
+      const msg = String(e?.shortMessage ?? e?.message ?? e);
+      if (!/nonce/i.test(msg)) throw e;
+      console.log(`  .. nonce rejected (${msg.slice(0, 70)}) — re-syncing count and retrying once`);
+      this.reset();
+      return await super.sendTransaction(tx);
+    }
+  }
+}
+
 async function main() {
   const key = requireKey("DEPLOYER_PRIVATE_KEY");
 
@@ -75,9 +95,16 @@ async function main() {
   // NonceManager: the public RPC lags under rate limiting and twice handed back a nonce that had
   // already been mined ("nonce has already been used" mid-deploy). Tracking the nonce locally and
   // incrementing after every send removes the round trip that keeps going stale.
-  const deployer = new ethers.NonceManager(new ethers.Wallet(key, provider));
-  await deployer.getNonce();   // prime the local counter once; it self-increments from here
+  const deployer = new SelfHealingNonceManager(new ethers.Wallet(key, provider));
   const deployerAddress = await deployer.getAddress();
+  // Prime the manager against a load-balanced edge serving stale counts: getNonce("pending")
+  // caches one provider read for the whole run, and if that read comes back BEHIND what is
+  // already mined, the first send reuses a spent nonce and the deploy dies at contract #1.
+  // Bump the manager's delta so the cached read lands on max(pending, mined) before anything
+  // is signed. getNonce("latest") bypasses the cache, so it is always a fresh provider read.
+  const primedPending = await deployer.getNonce("pending");
+  const minedCount = await deployer.getNonce("latest");
+  for (let i = primedPending; i < minedCount; i++) deployer.increment();
   const balance = await withRetry("balanceOf(deployer)", () => provider.getBalance(deployerAddress));
   log(`Testnet ${TESTNET_RPC_URL}`);
   log(`Deployer ${deployerAddress} — ${ethers.formatEther(balance)} ETH native`);
@@ -105,11 +132,15 @@ async function main() {
   const prices = await fetchPrices({ log });
 
   const artifactHashes = {};
+  // Filled in once OracleLib is deployed (below). OracleLib itself links nothing, so the empty
+  // map at its own deploy is correct.
+  const libraryAddresses = {};
   const deploy = async (name, args = [], label) => {
     log(`\nDeploying ${label ?? name}...`);
     const { abi, bytecode } = artifact(name);
     artifactHashes[name] = hashBytecode(bytecode);
-    const f = new ethers.ContractFactory(abi, bytecode, deployer);
+    const linked = linkLibraries(bytecode, libraryAddresses);
+    const f = new ethers.ContractFactory(abi, linked, deployer);
     return deployOnce(label ?? name, f, args);
   };
 
@@ -120,6 +151,14 @@ async function main() {
   // always a lower bound, never a block that already contains launch events.
   const deployBlock = await withRetry("blockNumber(deploy start)", () => provider.getBlockNumber());
   log(`Deploy starts at block ${deployBlock}`);
+
+  // The shared fail-closed oracle reads live in an external library (a size win: Launch sits on
+  // the EIP-170 cap, and one shared OracleLib dedupes those bytes out of every consumer). Every
+  // public library call compiles to a DELEGATECALL whose target is a link placeholder in the
+  // creation bytecode, so the library must be deployed FIRST and its address patched into
+  // EarnPool, Launch, LaunchpadFactory and OracleSwapRouter before those can be created at all.
+  const oracleLib = await deploy("OracleLib");
+  libraryAddresses.OracleLib = await oracleLib.getAddress();
 
   const weth = await deploy("MockWETH");
   const wethAddress = await weth.getAddress();
@@ -186,6 +225,11 @@ async function main() {
   log("\nAuthorizing both launchpads with the Earn Pool...");
   await sendTx("setFactory(WETH)", () => earn.setFactory(factoryAddress, true));
   await sendTx("setFactory(cbBTC)", () => earn.setFactory(cbbtcFactoryAddress, true));
+  // Authorising a factory is not by itself proof that the implementation address it hands
+  // registerPool is genuine -- the pool checks the implementation's own bytecode against this
+  // owner-curated set. Forgetting this tx means every createLaunch reverts "untrusted
+  // implementation" (caught by verify.mjs --probe-launch on the first deployment that did).
+  await sendTx("setTrustedImplementation", () => earn.setTrustedImplementation(implementationAddress, true));
   await sendTx("setProtocolLockupDays", () => earn.setProtocolLockupDays(14n));
   await sendTx("setCreatorLockupDays", () => earn.setCreatorLockupDays(3n));
 
@@ -224,6 +268,7 @@ async function main() {
     oracleCbbtc: btcOracleAddress,
     pairFactory: pairFactoryAddress,
     quoteZap: quoteZapAddress,
+    oracleLib: libraryAddresses.OracleLib,
     cbbtc: cbbtcAddress,
     cbbtcOracle: btcOracleAddress,
     cbbtcRouter: btcRouterAddress,
