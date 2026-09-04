@@ -21,6 +21,16 @@ let ready: Promise<void> | null = null;
 export function ensureSchema(): Promise<void> {
   if (!ready) {
     ready = (async () => {
+      // A transaction-mode pooler (Supabase's Supavisor, PgBouncer) hands out a real backend
+      // connection only per-transaction, and does not reliably support the multi-statement DDL
+      // block below -- it can hang until Postgres's own statement_timeout kills it, rather than
+      // erroring cleanly, which is what made every route calling this (i.e. all of them) appear
+      // to hang forever behind a pooled DATABASE_URL. A plain SELECT has none of that risk, so
+      // check first and only pay for the DDL block on a genuinely fresh database -- normally
+      // never in production, since the schema is expected to already be applied once by hand
+      // (Supabase SQL Editor, a direct connection) rather than raced by concurrent cold starts.
+      const rows = await query<{ exists: string | null }>(`SELECT to_regclass('public.hfyc_nav') AS exists`);
+      if (rows[0]?.exists) return;
       await query(SCHEMA_SQL);
     })().catch((e) => {
       // Do not cache a failure: a database that was not up yet should succeed on the next attempt
