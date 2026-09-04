@@ -537,8 +537,18 @@ export async function fetchLycPnl(
   // Combine and sort by block number
   const txs: LycTx[] = [];
 
+  // The testnet RPC occasionally answers getBlock with null; without a second try half the
+  // history renders with a 1970 timestamp.
+  const blockTime = async (blockNumber: number): Promise<number> => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const block = await provider.getBlock(blockNumber);
+      if (block?.timestamp) return block.timestamp;
+    }
+    return 0;
+  };
+
   for (const e of mintEvents) {
-    const block = await provider.getBlock(e.blockNumber);
+    const ts = await blockTime(e.blockNumber);
     const shares = e.args[2] as bigint;
     // NAV at mint time: we use the share value. For mints, the user paid NAV per share.
     // We can't know exact NAV at past time easily, so we approximate with $1 for deposits
@@ -548,20 +558,20 @@ export async function fetchLycPnl(
       shares,
       valueUsd: shares, // 1:1 at mint (USDG or ETH converted)
       navAtTime: WAD, // minted at $1
-      timestamp: block?.timestamp ?? 0,
+      timestamp: ts,
       txHash: e.transactionHash,
     });
   }
 
   for (const e of redeemEvents) {
-    const block = await provider.getBlock(e.blockNumber);
+    const ts = await blockTime(e.blockNumber);
     const shares = e.args[2] as bigint;
     txs.push({
       type: "redeem",
       shares,
       valueUsd: 0n, // will be computed from FIFO
       navAtTime: currentNav,
-      timestamp: block?.timestamp ?? 0,
+      timestamp: ts,
       txHash: e.transactionHash,
     });
   }

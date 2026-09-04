@@ -117,6 +117,10 @@ export default function LaunchDetail({
   // wrap-then-buy. USDG is the second leg: swapped to the quote through the launch's own router at
   // fill time.
   const [payToken, setPayToken] = useState<"ETH" | "WETH" | "USDG">("ETH");
+  // Sell-side mirror of payToken. "ETH" means the launch's quote asset -- native ether via the
+  // QuoteZap for a WETH-quoted coin, plain cbBTC otherwise. "WETH" (WETH-quoted coins only) keeps
+  // the quote as the ERC-20; "USDG" routes the proceeds through the launch's router into cash.
+  const [receiveToken, setReceiveToken] = useState<"ETH" | "WETH" | "USDG">("ETH");
   const [quoteTokenBalance, setQuoteTokenBalance] = useState<bigint>(0n);
   const [quote, setQuote] = useState<bigint | null>(null);
   const [busy, setBusy] = useState(false);
@@ -225,6 +229,9 @@ export default function LaunchDetail({
   const quoteSymbol = wrapsNative ? "ETH" : quoteInfo?.symbol ?? "quote";
   const quoteDecimals = quoteInfo?.decimals ?? 18;
   const paySymbol = payToken === "USDG" ? "USDG" : payToken === "WETH" ? "WETH" : quoteSymbol;
+  // What the Receive pill shows on a sell: the picked exit asset, with "ETH" resolving to the
+  // quote's display symbol (native ETH for a WETH coin, cbBTC for a cbBTC one).
+  const receiveSymbol = receiveToken === "USDG" ? "USDG" : receiveToken === "WETH" && wrapsNative ? "WETH" : quoteSymbol;
   // What a buy actually spends from: native gas for the "ETH" tab on a WETH coin, the wallet's own
   // WETH ERC-20 for the "WETH" tab, the quote ERC-20 for everything else (cbBTC), USDG when paying
   // in cash.
@@ -245,6 +252,16 @@ export default function LaunchDetail({
     return `${Number(whole).toLocaleString("en-US")}.${(frac + "0".repeat(places)).slice(0, places)}`;
   };
   const quotePlaces = quoteDecimals >= 18 ? 4 : Math.min(quoteDecimals, 6);
+  // Quote amount -> USDG at the coin's own collateral mark. The router does exactly this math
+  // (collateralIn * collateralScale * price / WAD) with no spread, so the label and the minOut
+  // for the USDG leg can both derive from it.
+  const quoteToUsdg = (v: bigint) =>
+    launch.collateralPriceUsd > 0n ? (v * launch.collateralPriceUsd) / 10n ** BigInt(quoteDecimals) : 0n;
+  const fmtUsdg = (v: bigint, places = 2) => {
+    const raw = ethers.formatUnits(v, 18);
+    const [whole, frac = ""] = raw.split(".");
+    return `${Number(whole).toLocaleString("en-US")}.${(frac + "0".repeat(places)).slice(0, places)}`;
+  };
 
   // Dollar values for the swap card — so we know what's been fetched, like the
   // fUSD → sfUSD example ($1,000 ↔ $1,000).
@@ -383,9 +400,11 @@ export default function LaunchDetail({
     };
   }, [wallet.address, quoteInfo, wrapsNative, launch.quoteToken]);
 
-  // Default slippage 1% for every swap — previously auto-bumped to 15% after graduation
+  // Default slippage 1% for every swap — previously auto-bumped to 15% after graduation. Also
+  // reset the receive token: a "WETH" picked on an ETH-quoted coin is meaningless on a cbBTC one.
   useEffect(() => {
     setSlippageBps(100);
+    setReceiveToken("ETH");
   }, [launch.address]);
 
   // The amount box is denominated in what is actually being SPENT: the pay token when buying
@@ -477,8 +496,20 @@ export default function LaunchDetail({
         // from the token amount instead compares two different units and reverts every time.
         const expectedOut = await quoteSell(launch.address, amt);
         const minOut = (expectedOut * (10000n - BigInt(slippageBps))) / 10000n;
-        await withTimeout(sell(addresses, launch.address, amt, minOut), TX_TIMEOUT_MS, "Sell");
-        toastSuccess("Swap confirmed", `${formatWad(amt, 0)} ${launch.symbol} → ${fmtQuote(expectedOut, quotePlaces)} ${quoteSymbol}`);
+        // Native ETH keeps the QuoteZap; a WETH or cbBTC payout takes the plain ERC-20 path; USDG
+        // converts after the fill. The USDG minOut re-derives from the same oracle the router
+        // prices at, so it only has to absorb drift between the two transactions.
+        const sellReceive =
+          receiveToken === "USDG" ? ("USDG" as const) : wrapsNative ? (receiveToken === "WETH" ? ("QUOTE" as const) : ("ETH" as const)) : ("QUOTE" as const);
+        const expectedUsdg = quoteToUsdg(expectedOut);
+        const minUsdgOut = (expectedUsdg * (10000n - BigInt(slippageBps))) / 10000n;
+        await withTimeout(sell(addresses, launch.address, amt, minOut, sellReceive, minUsdgOut), TX_TIMEOUT_MS, "Sell");
+        toastSuccess(
+          "Swap confirmed",
+          `${formatWad(amt, 0)} ${launch.symbol} → ${
+            sellReceive === "USDG" ? `${fmtUsdg(expectedUsdg)} USDG` : `${fmtQuote(expectedOut, quotePlaces)} ${quoteSymbol}`
+          }`,
+        );
       }
       setAmount("");
       setQuote(null);
@@ -518,7 +549,7 @@ export default function LaunchDetail({
           balance: side === "buy" ? buyMax : tokenBalance,
           decimals: side === "buy" ? (payToken === "USDG" ? 18 : quoteDecimals) : 18,
         }}
-        outputToken={{ symbol: side === "buy" ? launch.symbol : quoteSymbol, balance: 0n }}
+        outputToken={{ symbol: side === "buy" ? launch.symbol : receiveSymbol, balance: 0n }}
         inputTokenOptions={
           side === "buy"
             ? [
@@ -529,8 +560,26 @@ export default function LaunchDetail({
             : undefined
         }
         onInputTokenChange={side === "buy" ? (v) => { setPayToken(v as typeof payToken); setAmount(""); } : undefined}
+        outputTokenOptions={
+          side === "sell"
+            ? [
+                { key: "ETH", symbol: quoteSymbol },
+                { key: "USDG", symbol: "USDG" },
+                ...(wrapsNative ? [{ key: "WETH", symbol: "WETH" }] : []),
+              ]
+            : undefined
+        }
+        onOutputTokenChange={side === "sell" ? (v) => setReceiveToken(v as typeof receiveToken) : undefined}
         value={amount} onValueChange={(v) => refreshQuote(v)}
-        quoteLabel={quote !== null ? (side === "buy" ? formatWad(quote, 0) : fmtQuote(quote, quotePlaces)) : "…"}
+        quoteLabel={
+          quote !== null
+            ? side === "buy"
+              ? formatWad(quote, 0)
+              : receiveToken === "USDG"
+                ? fmtUsdg(quoteToUsdg(quote))
+                : fmtQuote(quote, quotePlaces)
+            : "…"
+        }
         inputUsdLabel={inputUsdLabel}
         outputUsdLabel={outputUsdLabel}
         slippage={(slippageBps / 100).toFixed(1)} slippageOptions={[50, 100, 300]} onSlippageChange={setSlippageBps} slippageBps={slippageBps}

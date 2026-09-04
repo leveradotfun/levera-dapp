@@ -697,22 +697,33 @@ export async function buy(
   });
 }
 
+/// What a seller walks away with. "ETH" is native ether via the QuoteZap (WETH-quoted coins only);
+/// "QUOTE" is the launch's quote ERC-20 as-is (WETH or cbBTC); "USDG" converts the quote proceeds
+/// through the launch's own router after the sell fills.
+export type SellReceive = "ETH" | "QUOTE" | "USDG";
+
 export async function sell(
   addresses: DeployedAddresses,
   launchAddress: string,
   tokensIn: bigint,
-  minOut: bigint
+  minOut: bigint,
+  receive: SellReceive = "QUOTE",
+  // Minimum USDG out for the router leg when receive === "USDG", in USDG's 18 decimals. Ignored
+  // otherwise; 0 skips the check entirely.
+  minUsdgOut: bigint = 0n
 ) {
   await assertWalletSeesApp(addresses.factory);
   return withActiveSigner(async ({ signer, address }) => {
     const launch = getLaunch(launchAddress, signer);
     const graduated: boolean = await launch.graduated();
     const overrides = await walletTxOverrides(address, 2_000_000n);
-    // WETH-quoted coins settle sells as native ETH via the QuoteZap, matching the buy side and
-    // the "Sold for X ETH" message; other quotes pay out their own ERC-20.
+    // WETH-quoted coins settle native-ETH sells via the QuoteZap, matching the buy side and the
+    // "Sold for X ETH" message. Every other receive needs the quote as an ERC-20 -- it is the
+    // input the USDG leg below swaps, and WETH itself is a legitimate payout -- so those go
+    // through the plain Launch path, which transfers the quote ERC-20 straight to the seller.
     let tx;
     let usedPool = graduated;
-    if (addresses.quoteZap && (await launch.quote()).toLowerCase() === addresses.weth.toLowerCase()) {
+    if (receive === "ETH" && addresses.quoteZap && (await launch.quote()).toLowerCase() === addresses.weth.toLowerCase()) {
       const zapAddress = addresses.quoteZap!;
       const meme = new ethers.Contract(
         launchAddress,
@@ -742,6 +753,30 @@ export async function sell(
     const receipt = await tx.wait();
 
     const amounts = extractTradeAmounts(receipt, usedPool ? "PoolSell" : "CurveSell");
+
+    // Receive in USDG: the sell leg paid out the quote ERC-20, so route it through the launch's
+    // OWN router -- the same oracle-priced venue zapUsdgToQuote uses in reverse, and the only one
+    // bound to this launch's collateral (a cbBTC router will not take WETH). The exact proceeds
+    // come off the sell event, not the pre-trade quote, so a fill better than quoted converts in
+    // full and minUsdgOut only has to cover oracle drift between the two transactions.
+    if (receive === "USDG") {
+      if (!amounts || amounts.amount === 0n) {
+        throw new Error("Sell filled but the proceeds event was unreadable — the quote asset is in your wallet; swap to USDG from the trade page.");
+      }
+      const routerAddress: string = await launch.swapRouter();
+      const quoteAddress: string = await launch.quote();
+      const quote = new ethers.Contract(
+        quoteAddress,
+        ["function approve(address,uint256) returns (bool)", "function allowance(address,address) view returns (uint256)"],
+        signer,
+      );
+      if ((await quote.allowance(address, routerAddress)) < amounts.amount) {
+        await (await quote.approve(routerAddress, ethers.MaxUint256, await walletTxOverrides(address, 200_000n))).wait();
+      }
+      const router = new ethers.Contract(routerAddress, OracleSwapRouterAbi as ethers.InterfaceAbi, signer);
+      await (await router.swapCollateralForUsdg(amounts.amount, minUsdgOut, await walletTxOverrides(address, 500_000n))).wait();
+    }
+
     if (amounts) {
       const [collateralPriceUsd, quoteScale] = await Promise.all([
         fetchLaunchCollateralPriceUsd(launchAddress),

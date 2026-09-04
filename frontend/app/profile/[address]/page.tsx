@@ -628,7 +628,7 @@ export default function ProfileAddressPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* ── PnL hero ── */}
         <div className="rounded-xl border border-border bg-card p-5">
           <div className="flex items-start justify-between gap-3">
@@ -1001,7 +1001,7 @@ function LycPanel({ global: g, position, pnl }: { global: LycGlobal | null; posi
                   {t.type}
                 </span>
                 <span className="ml-2 text-sm font-semibold text-foreground">{formatWad(t.shares, 4)} LYC</span>
-                <div className="text-xs text-muted">{timeAgo(t.timestamp)} ago</div>
+                <div className="text-xs text-muted">{t.timestamp > 0 ? `${timeAgo(t.timestamp)} ago` : "—"}</div>
               </div>
               <div className="flex shrink-0 items-center gap-3 text-right">
                 <div className="font-mono text-sm text-foreground">≈ {usd((t.shares * t.navAtTime) / WAD)}</div>
