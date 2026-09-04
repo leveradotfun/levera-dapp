@@ -34,6 +34,15 @@ export const repoRoot = path.join(here, "..", "..");
 export const testnetRoot = path.join(here, "..");
 
 export const TESTNET_CHAIN_ID = 46630n;
+
+// Loaded here, before TESTNET_RPC_URL/MAINNET_RPC_URL read process.env below -- every script that
+// imports this module also calls loadEnvFile() itself, but ESM evaluates a module's imports (this
+// file's whole top level, including those two consts) before the importing script's own top-level
+// code runs. Calling it a second time downstream is harmless (loadEnvFile only fills keys that
+// aren't already set), but without this call here, TESTNET_RPC_URL/MAINNET_RPC_URL always saw an
+// empty process.env and silently fell back to the public RPC no matter what testnet/.env said.
+loadEnvFile();
+
 export const TESTNET_RPC_URL = process.env.TESTNET_RPC_URL ?? "https://rpc.testnet.chain.robinhood.com";
 export const MAINNET_RPC_URL = process.env.MAINNET_RPC_URL ?? "https://rpc.mainnet.chain.robinhood.com";
 
