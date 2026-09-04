@@ -30,6 +30,8 @@ import { timeAgo } from "@/lib/utils";
 import { useXAuth } from "@/lib/useXAuth";
 import { loadXProfile } from "@/lib/xAuth";
 import { FollowInfo, fetchFollowInfo, fetchFollowList, FollowListEntry, setFollow } from "@/lib/social";
+import { useTopTraders, type TopTraderRow } from "@/lib/topTraders";
+import { useXHandles, type HandleMap } from "@/lib/xHandles";
 import { toastError, toastSuccess } from "@/lib/toast";
 
 type CreatedRow = { launch: LaunchSummary; fees: CreatorFees };
@@ -346,6 +348,98 @@ function FollowButton({
   );
 }
 
+/// Left rail on the profile: every trader on the platform ranked by net PnL. This is the
+/// discovery surface that makes wallet-to-wallet follows possible — a row click opens that
+/// wallet's profile, and the + button follows inline without leaving the page.
+function TopTradersPanel({
+  rows,
+  scanning,
+  viewerAddress,
+  viewerFollowing,
+  handles,
+  onFollowed,
+}: {
+  rows: TopTraderRow[];
+  scanning: boolean;
+  viewerAddress: string | null;
+  viewerFollowing: Set<string>;
+  handles: HandleMap;
+  onFollowed: () => void;
+}) {
+  const router = useRouter();
+  const { setWalletModalOpen } = useAppState();
+  const [busy, setBusy] = useState<string | null>(null);
+  const visible = rows.filter((r) => r.address !== viewerAddress);
+
+  async function toggle(target: string) {
+    if (!viewerAddress) {
+      setWalletModalOpen(true);
+      return;
+    }
+    const following = viewerFollowing.has(target);
+    setBusy(target);
+    try {
+      await setFollow(target, following ? "unfollow" : "follow");
+      toastSuccess(following ? "Unfollowed" : "Followed");
+      onFollowed();
+    } catch (e) {
+      toastError(e, "Could not update follow");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4">
+      <div className="flex items-center justify-between border-b border-border pb-2">
+        <h2 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">Top PNL</h2>
+        {scanning ? <span className="text-[10px] text-muted">scanning…</span> : null}
+      </div>
+      {visible.length === 0 ? (
+        <p className="pt-3 text-xs text-muted">No traders yet — any buy or sell on a coin ranks the wallet here.</p>
+      ) : (
+        <div className="divide-y divide-border">
+          {visible.map((r, i) => {
+            const following = viewerFollowing.has(r.address);
+            const name = handles.get(r.address);
+            return (
+              <div key={r.address} className="flex items-center gap-2 py-2">
+                <button
+                  onClick={() => router.push(`/profile/${r.address}`)}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  title="View profile"
+                >
+                  <span className="w-4 shrink-0 font-mono text-[10px] text-muted">{i + 1}</span>
+                  <CoinAvatar address={r.address} size={26} />
+                  <span className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground">
+                    {name ?? shortAddress(r.address)}
+                  </span>
+                  <span className={`shrink-0 font-mono text-xs font-semibold ${r.profit >= 0 ? "text-green" : "text-red"}`}>
+                    {r.profit >= 0 ? "+" : "-"}
+                    {usdNum(Math.abs(r.profit))}
+                  </span>
+                </button>
+                <button
+                  onClick={() => toggle(r.address)}
+                  disabled={busy === r.address}
+                  className={
+                    following
+                      ? "shrink-0 rounded-md border border-border px-1.5 py-0.5 text-[10px] font-bold leading-none text-muted transition-colors hover:border-red/40 hover:text-red disabled:opacity-50"
+                      : "shrink-0 rounded-md bg-accent/15 px-1.5 py-0.5 text-[10px] font-bold leading-none text-accent transition-colors hover:bg-accent/25 disabled:opacity-50"
+                  }
+                  title={following ? "Unfollow" : "Follow"}
+                >
+                  {busy === r.address ? "…" : following ? "✓" : "+"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ProfileAddressPage() {
   const params = useParams<{ address: string }>();
   const rawAddress = params.address ?? "";
@@ -505,6 +599,29 @@ export default function ProfileAddressPage() {
   const book = usePositions(launches, holdings, userAddr);
   const activity = useActivity(launches, userAddr);
 
+  // Left-rail discovery: every trader on the factory ranked by net PnL, plus the wallets the
+  // viewer already follows so the inline +/✓ buttons render the right state. Re-fetched after
+  // any sidebar follow toggles (followVersion), so the buttons never drift from the graph.
+  const topTraders = useTopTraders(launches, addresses !== null);
+  const handles = useXHandles();
+  const [viewerFollowing, setViewerFollowing] = useState<Set<string>>(new Set());
+  const [followVersion, setFollowVersion] = useState(0);
+  useEffect(() => {
+    if (!wallet.address) {
+      setViewerFollowing(new Set());
+      return;
+    }
+    let stopped = false;
+    fetchFollowList(wallet.address, "following")
+      .then((entries) => {
+        if (!stopped) setViewerFollowing(new Set(entries.map((e) => e.address.toLowerCase())));
+      })
+      .catch(() => {});
+    return () => {
+      stopped = true;
+    };
+  }, [wallet.address, followVersion]);
+
   if (!profileAddress) {
     return (
       <div className="p-10 text-center">
@@ -540,7 +657,23 @@ export default function ProfileAddressPage() {
     : null;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4">
+    <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
+      {/* ── Left rail: other traders, ranked by PnL ── */}
+      <aside className="order-last self-start lg:order-first lg:sticky lg:top-4">
+        <TopTradersPanel
+          rows={topTraders.rows}
+          scanning={topTraders.scanning}
+          viewerAddress={wallet.address?.toLowerCase() ?? null}
+          viewerFollowing={viewerFollowing}
+          handles={handles}
+          onFollowed={() => {
+            setFollowVersion((v) => v + 1);
+            reloadFollows();
+          }}
+        />
+      </aside>
+
+      <div className="min-w-0 space-y-4">
       {/* ── Identity header ── */}
       <div className="overflow-hidden rounded-xl border border-border bg-card">
         <div className="h-24 bg-gradient-to-r from-green/15 via-accent/10 to-transparent" />
@@ -846,6 +979,7 @@ export default function ProfileAddressPage() {
       {followModal ? (
         <FollowListModal profileAddress={profileAddress} kind={followModal} onClose={() => setFollowModal(null)} />
       ) : null}
+      </div>
     </div>
   );
 }

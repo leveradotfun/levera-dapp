@@ -538,11 +538,13 @@ export async function fetchLycPnl(
   const txs: LycTx[] = [];
 
   // The testnet RPC occasionally answers getBlock with null; without a second try half the
-  // history renders with a 1970 timestamp.
+  // history renders with a 1970 timestamp. Converted to ms here -- the rest of the app's
+  // timestamps (timeAgo on the profile's LYC tab) are epoch milliseconds, and a raw seconds
+  // value is small enough to read as 1970 anyway, rendering every mint as "57y ago".
   const blockTime = async (blockNumber: number): Promise<number> => {
     for (let attempt = 0; attempt < 2; attempt++) {
       const block = await provider.getBlock(blockNumber);
-      if (block?.timestamp) return block.timestamp;
+      if (block?.timestamp) return block.timestamp * 1000;
     }
     return 0;
   };
