@@ -1,4 +1,4 @@
-import { query } from "./pool";
+import { getPool, query } from "./pool";
 import { SCHEMA_SQL } from "./schema";
 
 /// Schema management, run automatically rather than by hand.
@@ -31,7 +31,7 @@ export function ensureSchema(): Promise<void> {
       // (Supabase SQL Editor, a direct connection) rather than raced by concurrent cold starts.
       const rows = await query<{ exists: string | null }>(`SELECT to_regclass('public.hfyc_nav') AS exists`);
       if (rows[0]?.exists) return;
-      await query(SCHEMA_SQL);
+      await runDdlSerialized();
     })().catch((e) => {
       // Do not cache a failure: a database that was not up yet should succeed on the next attempt
       // rather than poisoning the process until it restarts.
@@ -40,6 +40,33 @@ export function ensureSchema(): Promise<void> {
     });
   }
   return ready;
+}
+
+/// Runs the DDL block behind a transaction-scoped advisory lock, so a genuinely fresh database
+/// hit by several concurrent cold starts at once (all of which just saw "missing" from the SELECT
+/// above) can't have them all race into CREATE TABLE / ALTER TABLE simultaneously -- ADD COLUMN
+/// and CREATE INDEX take strong table locks regardless of IF NOT EXISTS, and concurrent DDL on the
+/// same tables is exactly the shape of lock wait that produces a "statement timeout" instead of a
+/// clean error. `_xact_` (not the plain, session-scoped advisory lock) is the variant that's safe
+/// under transaction pooling: it lives and dies with this one BEGIN/COMMIT, matching how the
+/// pooler hands out a real backend connection only for that span.
+async function runDdlSerialized(): Promise<void> {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtextextended('levera-schema-v1', 0))");
+    // Re-check: whoever held the lock before us may have just finished applying it.
+    const rows = await client.query<{ exists: string | null }>(`SELECT to_regclass('public.hfyc_nav') AS exists`);
+    if (!rows.rows[0]?.exists) {
+      await client.query(SCHEMA_SQL);
+    }
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
 }
 
 /// Every table that holds session data, in an order safe to truncate together.
