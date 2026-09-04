@@ -230,8 +230,6 @@ async function main() {
   // owner-curated set. Forgetting this tx means every createLaunch reverts "untrusted
   // implementation" (caught by verify.mjs --probe-launch on the first deployment that did).
   await sendTx("setTrustedImplementation", () => earn.setTrustedImplementation(implementationAddress, true));
-  await sendTx("setProtocolLockupDays", () => earn.setProtocolLockupDays(14n));
-  await sendTx("setCreatorLockupDays", () => earn.setCreatorLockupDays(3n));
 
   // Faucet-mint access control. Each token's MINTER_ROLE, granted only to:
   //   - the deployer (automatic, from FaucetMintable's constructor)

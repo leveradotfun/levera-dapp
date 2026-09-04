@@ -26,11 +26,11 @@ type FaucetStatus = {
   claimedToday: Record<Asset, string>;
 };
 
-const CARDS: Array<{ asset: Asset; label: string; onChainSymbol: string; daily: string; blurb: string; accent: string; decimals: number; testnetAddress: string }> = [
-  { asset: "cbbtc", label: "cbBTC", onChainSymbol: "cbBTC", daily: "0.5", blurb: "Launch and trade cbBTC-quoted coins.", accent: "#f7931a", decimals: 8, testnetAddress: "0x056Fe96EAB78d0a89e7E26a89724578Ee721c191" },
-  { asset: "weth", label: "WETH", onChainSymbol: "mWETH", daily: "5", blurb: "Launch WETH-quoted coins and trade.", accent: "#627eea", decimals: 18, testnetAddress: "0x9504a9946Efe6858f8cbA6e6Ea0efBb9105592be" },
-  { asset: "usdg", label: "USDG", onChainSymbol: "mUSDG", daily: "10,000", blurb: "Mint LYC in the Earn Pool.", accent: "#22c55e", decimals: 18, testnetAddress: "0xe37F7675aE587b9d6EAB0f443E41fcF48866dA28" },
-  { asset: "eth", label: "ETH", onChainSymbol: "ETH", daily: "0.001", blurb: "Gas money — paid from the community pot.", accent: "#a1a1aa", decimals: 18, testnetAddress: "" },
+const CARDS: Array<{ asset: Asset; label: string; onChainSymbol: string; daily: string; blurb: string; accent: string; decimals: number }> = [
+  { asset: "cbbtc", label: "cbBTC", onChainSymbol: "cbBTC", daily: "0.5", blurb: "Launch and trade cbBTC-quoted coins.", accent: "#f7931a", decimals: 8 },
+  { asset: "weth", label: "WETH", onChainSymbol: "mWETH", daily: "5", blurb: "Launch WETH-quoted coins and trade.", accent: "#627eea", decimals: 18 },
+  { asset: "usdg", label: "USDG", onChainSymbol: "mUSDG", daily: "10,000", blurb: "Mint LYC in the Earn Pool.", accent: "#22c55e", decimals: 18 },
+  { asset: "eth", label: "ETH", onChainSymbol: "ETH", daily: "0.001", blurb: "Gas money — paid from the community pot.", accent: "#a1a1aa", decimals: 18 },
 ];
 
 async function addTokenToMetaMask(tokenAddress: string, symbol: string, decimals: number, image?: string) {
@@ -242,9 +242,12 @@ export default function FaucetPage() {
                   Yours: <span className="font-mono text-secondary">{userBalance(card.asset)}</span>
                 </span>
                 <div className="flex items-center gap-2">
-                  {card.asset !== "eth" && (status?.tokens?.[card.asset] || card.testnetAddress) ? (
+                  {card.asset !== "eth" && status?.tokens?.[card.asset] ? (
                     (() => {
-                      const liveAddress = status?.tokens?.[card.asset] || card.testnetAddress;
+                      // Live address from the API only. A hardcoded fallback here survived every
+                      // redeploy and pointed the "+ wallet" button at the previous deployment's
+                      // tokens -- a dead balance in the wallet that looks like a broken faucet.
+                      const liveAddress = status.tokens[card.asset];
                       return addedTokens.has(liveAddress) ? (
                         <span className="text-[10px] text-green font-medium">Added</span>
                       ) : (

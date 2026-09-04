@@ -167,6 +167,23 @@ export async function POST(request: Request) {
     } else {
       const token = tokenAddresses[asset];
       if (!token) return json({ error: `${ASSETS[asset].label} is not part of this deployment.` }, 400);
+      // Fail with a reason, not a raw revert dump: a faucet wallet without the role is a deploy
+      // wiring gap (the role is granted per-token at deploy time, to the key in testnet/.env --
+      // if Vercel's FAUCET_PRIVATE_KEY is a different address, minting reverts for exactly this).
+      const abi = ["function MINTER_ROLE() view returns (bytes32)", "function hasRole(bytes32,address) view returns (bool)"];
+      const rw = new ethers.Contract(token, abi, p);
+      const role: string = await rw.MINTER_ROLE();
+      if (!(await rw.hasRole(role, faucetAddress))) {
+        return json(
+          {
+            error:
+              `The faucet wallet (${faucetAddress}) has no MINTER_ROLE on ${ASSETS[asset].label}. ` +
+              "The deployment granted the role to a different key -- align FAUCET_PRIVATE_KEY with testnet/.env, " +
+              "or grant the role to this address (see testnet/deploy.mjs).",
+          },
+          503,
+        );
+      }
       const t = new ethers.Contract(token, ["function mint(address,uint256)"], wallet);
       const rc = await (await t.mint(address, amount, { gasLimit: 300_000n })).wait();
       if (rc?.status !== 1) throw new Error("mint failed");

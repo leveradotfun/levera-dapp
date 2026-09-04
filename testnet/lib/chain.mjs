@@ -149,8 +149,8 @@ export async function withRetry(label, fn, attempts = 5) {
 /// `fn` must return a ContractTransactionResponse (or TransactionResponse) from a single send —
 /// not a retried one. This is the only sanctioned way for these scripts to write on-chain: it
 /// proves inclusion AND success, which the previous `withRetry`-around-a-write pattern never did
-/// for `setCashPrice`, `addCollateral`, `setFactory`, `setProtocolLockupDays`,
-/// `setCreatorLockupDays`, the faucet mints, or the oracle refresh writes.
+/// for `setCashPrice`, `addCollateral`, `setFactory`,
+/// the faucet mints, or the oracle refresh writes.
 export async function sendTx(label, fn, { confirmations = 1 } = {}) {
   let tx;
   try {

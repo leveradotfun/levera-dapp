@@ -52,7 +52,7 @@ const FACTORY_ABI = [
 const EARN_ABI = [
   "function isFactory(address) view returns (bool)",
   "function isTrustedImplementation(address) view returns (bool)",
-  "function collateral(address) view returns (address oracle, address router, uint96 a, uint96 b, uint96 c, uint16 capBps, bool enabled, uint128 scale)",
+  "function collateral(address) view returns (address oracle, address router, uint256 pooled, uint256 vault, uint256 idle, uint256 seniorUsd, uint16 capBps, bool enabled, uint256 scale)",
   "function paused() view returns (bool)",
   "function owner() view returns (address)",
 ];
