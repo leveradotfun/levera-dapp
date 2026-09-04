@@ -30,13 +30,16 @@ export default function MobileSwapSheet({
 
   return (
     <>
+      {/* Visible whenever the sheet is the card's home -- below lg, matching useIsDesktop().
+          Sits above the phone-only bottom nav below md; once the rail replaces the nav (md-lg)
+          it drops to the bottom edge itself. */}
       <div
-        className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-40 border-t border-border bg-bg/95 px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-md md:hidden"
+        className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-40 border-t border-border bg-bg/95 px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-md md:bottom-0 lg:hidden"
       >
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="flex w-full items-center justify-center rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-accent-ink transition-opacity hover:opacity-90"
+          className="mx-auto flex w-full items-center justify-center rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-accent-ink transition-opacity hover:opacity-90 sm:max-w-md"
         >
           {triggerLabel}
         </button>
@@ -48,9 +51,12 @@ export default function MobileSwapSheet({
             className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
             onClick={() => setOpen(false)}
           />
-          <div className="absolute inset-x-0 bottom-0 flex max-h-[88dvh] flex-col overflow-hidden rounded-t-2xl border-x border-t border-border bg-bg shadow-2xl animate-sheet-up">
+          {/* Full-bleed sheet on phones; a centered card docked to the bottom edge from sm up,
+              where the viewport is wide enough that full-bleed looks stretched. mx-auto centers
+              without a translate so the slide-up keyframes never fight a positioning transform. */}
+          <div className="absolute inset-x-0 bottom-0 mx-auto flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-t-2xl border-x border-t border-border bg-bg shadow-2xl animate-sheet-up sm:w-[32rem] sm:rounded-2xl sm:border">
             <div className="flex items-center justify-between gap-3 px-4 pb-2 pt-3">
-              <div className="mx-auto h-1 w-10 rounded-full bg-border md:hidden" />
+              <div className="mx-auto h-1 w-10 rounded-full bg-border" />
             </div>
             <div className="flex items-center justify-between gap-3 border-b border-border px-4 pb-3">
               <div className="min-w-0 truncate text-sm font-semibold text-foreground">{title}</div>
