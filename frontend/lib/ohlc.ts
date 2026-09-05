@@ -20,38 +20,53 @@ export const CHART_INTERVALS = [
 
 export type ChartIntervalId = (typeof CHART_INTERVALS)[number]["id"];
 
-/// Bucket live ticks into OHLC bars. Sampling is ~400ms, so a 5s bar is a real candle, not a fake.
+/// Hard cap on emitted bars. Gap-filling multiplies the point span out to the bucket grid; at a
+/// 1s interval a multi-day span would be hundreds of thousands of flat bars nobody scrolls to.
+/// When the grid would exceed this, the OLDEST bars are trimmed -- the default viewport shows the
+/// most recent ~80 anyway.
+const MAX_BARS = 20_000;
+
+/// Bucket live ticks into OHLC bars as a CONTINUOUS series.
+///
+/// Two properties make this read like a real TradingView chart instead of floating shards:
+///
+/// 1. SPIKES ARE CLAMPED, NOT DROPPED. Low-liquidity bonding-curve trades with tiny amounts print
+///    5-10x away from surrounding ticks (1s bars hitting $0.010 against a $0.00128 current price).
+///    The tick stays -- the close moves, direction preserved -- but its extreme is clamped to the
+///    local median so the wick cannot stretch the y-axis. The previous version DELETED these
+///    ticks, which punched holes into exactly the sparse regions where continuity mattered most.
+/// 2. EVERY BUCKET EXISTS. Points only land where something happened: a trade, or the sampler
+///    while somebody had the page open. Between those, old code rendered nothing -- isolated
+///    candles floating in whitespace. Here every bucket between the first and last occupied one
+///    carries the previous close forward as a flat candle: no ticks means the price did not move,
+///    and the chart now says that instead of going blank.
 export function candlesFromPoints(points: PricePoint[], intervalMs: number): Candle[] {
   if (points.length === 0) return [];
-  // Filter single-tick price spikes (low-liquidity bonding-curve trades with tiny amounts
-  // that print 5-10x away from the surrounding ticks and stretch the y-axis so the
-  // current action is unreadable — see screenshot at 09:45 where 1s bars hit $0.010 vs current $0.00128).
-  // We keep the spike's close but clamp its wick to the surrounding median so the bar still
-  // shows direction without dominating scale. Outlier = >4x or <0.25x the 20-point median.
-  const filtered = (() => {
-    if (points.length < 10) return points;
-    const out: PricePoint[] = [];
-    for (let i = 0; i < points.length; i++) {
-      const p = points[i];
-      if (!Number.isFinite(p.price) || p.price <= 0) continue;
-      const windowStart = Math.max(0, i - 10);
-      const windowEnd = Math.min(points.length, i + 11);
-      const windowPrices = points.slice(windowStart, windowEnd).map((q) => q.price).filter((v) => Number.isFinite(v) && v > 0).sort((a, b) => a - b);
-      const median = windowPrices[Math.floor(windowPrices.length / 2)] ?? p.price;
-      if (median > 0 && (p.price > median * 4 || p.price < median * 0.25)) {
-        continue;
-      }
-      out.push(p);
-    }
-    // If filtering removed >80% (e.g. genuinely volatile launch), fall back to unfiltered
-    return out.length >= points.length * 0.2 ? out : points;
-  })();
 
+  const clamped: PricePoint[] = [];
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    if (!Number.isFinite(p.price) || p.price <= 0) continue;
+    const windowStart = Math.max(0, i - 10);
+    const windowEnd = Math.min(points.length, i + 11);
+    const windowPrices = points
+      .slice(windowStart, windowEnd)
+      .map((q) => q.price)
+      .filter((v) => Number.isFinite(v) && v > 0)
+      .sort((a, b) => a - b);
+    const median = windowPrices[Math.floor(windowPrices.length / 2)] ?? p.price;
+    // >4x / <0.25x the 20-point local median is a low-liquidity print, not a market move.
+    let price = p.price;
+    if (median > 0 && (price > median * 4 || price < median * 0.25)) {
+      price = median > price ? median * 0.25 : median * 4;
+    }
+    clamped.push({ t: p.t, price });
+  }
+
+  const stepSec = Math.max(1, Math.floor(intervalMs / 1000));
   const buckets = new Map<number, Candle>();
-  for (const p of filtered) {
-    if (!Number.isFinite(p.price) || p.price < 0) continue;
-    const bucketStart = Math.floor(p.t / intervalMs) * intervalMs;
-    const time = Math.floor(bucketStart / 1000);
+  for (const p of clamped) {
+    const time = Math.floor(p.t / 1000 / stepSec) * stepSec;
     const existing = buckets.get(time);
     if (!existing) {
       buckets.set(time, { time, open: p.price, high: p.price, low: p.price, close: p.price });
@@ -61,7 +76,24 @@ export function candlesFromPoints(points: PricePoint[], intervalMs: number): Can
       existing.close = p.price;
     }
   }
-  return [...buckets.values()].sort((a, b) => a.time - b.time);
+
+  const occupied = [...buckets.values()].sort((a, b) => a.time - b.time);
+  if (occupied.length === 0) return [];
+
+  // Forward-fill: flat candles at the previous close across every unoccupied bucket, so the
+  // series is gapless from the first to the last tick.
+  const out: Candle[] = [occupied[0]];
+  let prev = occupied[0];
+  for (let i = 1; i < occupied.length; i++) {
+    const next = occupied[i];
+    for (let t = prev.time + stepSec; t < next.time; t += stepSec) {
+      out.push({ time: t, open: prev.close, high: prev.close, low: prev.close, close: prev.close });
+    }
+    out.push(next);
+    prev = next;
+  }
+
+  return out.length > MAX_BARS ? out.slice(out.length - MAX_BARS) : out;
 }
 
 const SUBSCRIPT = ["₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉"] as const;

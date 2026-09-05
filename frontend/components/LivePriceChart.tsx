@@ -123,9 +123,12 @@ export default function LivePriceChart({
     }
     const last = candles[candles.length - 1];
     const prev = dataRef.current;
-    // Same interval and the tail bar is the same bucket (or a later one): update just that bar.
-    // Anything else -- first load, interval switch, a reseed from the chain log -- needs setData.
-    if (prev && prev.intervalMs === intervalMs && last.time >= prev.lastTime) {
+    // Same interval and the tail advanced by AT MOST one bucket: update just that bar. A bigger
+    // jump (throttled tab, sampler stall) means buckets in between exist only in the rebuilt
+    // array -- gap-fill makes them real flat candles, and update() alone would skip them and
+    // punch a whitespace hole back into the middle of the chart. A reseed from the chain log or
+    // a head trim also lands here as a full setData.
+    if (prev && prev.intervalMs === intervalMs && last.time >= prev.lastTime && last.time - prev.lastTime <= intervalMs / 1000) {
       series.update({
         time: last.time as UTCTimestamp,
         open: last.open,
