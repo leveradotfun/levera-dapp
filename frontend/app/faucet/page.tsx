@@ -227,6 +227,9 @@ export default function FaucetPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {CARDS.map((card) => {
           const done = claimed(card.asset);
+          // The server owns the actual daily amounts (it enforces them) -- the card constant is
+          // only a pre-load fallback, so the badge and button always read the live limit.
+          const dailyLabel = status?.limits?.[card.asset] ?? card.daily;
           return (
             <div key={card.asset} className="rounded-2xl border border-border bg-card p-5 flex flex-col gap-2">
               <div className="flex items-center justify-between">
@@ -234,7 +237,7 @@ export default function FaucetPage() {
                   <TokenIcon symbol={card.label} size={22} />
                   <span className="text-sm font-semibold text-foreground">{card.label}</span>
                 </div>
-                <span className="font-mono text-xs text-accent">{card.daily} / day</span>
+                <span className="font-mono text-xs text-accent">{dailyLabel} / day</span>
               </div>
               <p className="text-[11px] leading-relaxed text-muted flex-1">{card.blurb}</p>
               <div className="flex items-center justify-between text-xs">
@@ -286,7 +289,7 @@ export default function FaucetPage() {
                         : "bg-accent text-accent-ink hover:opacity-90 disabled:opacity-50"
                     }`}
                   >
-                    {busy === card.asset ? "Claiming…" : done ? "Claimed today" : `Claim ${card.daily} ${card.label}`}
+                    {busy === card.asset ? "Claiming…" : done ? "Claimed today" : `Claim ${dailyLabel} ${card.label}`}
                   </button>
                   )}
                 </div>
@@ -358,7 +361,7 @@ export default function FaucetPage() {
         <p className="text-[11px] text-muted">
           Faucet network: {status.network === "robinhood-testnet" ? "Robinhood Chain Testnet (46630)" : "local fork"}.
           Limits reset at midnight UTC. The ETH pot currently holds {potEth.toFixed(4)} ETH — roughly{" "}
-          {Math.floor(potEth / 0.001).toLocaleString()} daily claims until it needs a top-up.
+          {Math.floor(potEth / Number(status?.limits?.eth ?? 0.001) || 0).toLocaleString()} daily claims until it needs a top-up.
         </p>
       ) : null}
     </div>

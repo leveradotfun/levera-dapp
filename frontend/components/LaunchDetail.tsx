@@ -581,8 +581,13 @@ export default function LaunchDetail({
           symbol: side === "buy" ? paySymbol : launch.symbol,
           balance: side === "buy" ? buyMax : tokenBalance,
           decimals: side === "buy" ? (payToken === "USDG" ? 18 : quoteDecimals) : 18,
+          imageUrl: side === "buy" ? undefined : meta?.imageUrl ?? undefined,
         }}
-        outputToken={{ symbol: side === "buy" ? launch.symbol : receiveSymbol, balance: 0n }}
+        outputToken={{
+          symbol: side === "buy" ? launch.symbol : receiveSymbol,
+          balance: 0n,
+          imageUrl: side === "buy" ? meta?.imageUrl ?? undefined : undefined,
+        }}
         inputTokenOptions={
           side === "buy"
             ? [

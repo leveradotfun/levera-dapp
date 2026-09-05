@@ -5,6 +5,7 @@ import PriceLabelRaw from "@/components/PriceLabel";
 import TokenIcon from "@/components/TokenIcon";
 import { timeAgo } from "@/lib/utils";
 import { useXHandles } from "@/lib/xHandles";
+import { useTokenImages } from "@/lib/tokenMetadata";
 import TraderIdentity from "@/components/TraderIdentity";
 
 const PALETTE = ["#ECE3D1", "#22c55e", "#38bdf8", "#f472b6", "#fbbf24", "#a78bfa", "#fb7185", "#34d399"];
@@ -46,6 +47,7 @@ export default function LiveLaunchGrid({
 }) {
   // Called before the empty-state early return below: hooks run unconditionally.
   const xHandles = useXHandles();
+  const tokenImages = useTokenImages(launches.map((l) => l.address));
   if (launches.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-border p-12 text-center">
@@ -90,15 +92,25 @@ export default function LiveLaunchGrid({
             />
             <div className="relative">
             <div className="flex items-start gap-3">
-              <div
-                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-xl transition-transform group-hover:scale-105"
-                style={{
-                  background: `linear-gradient(135deg, ${color}30, ${color}0d)`,
-                  border: `1px solid ${color}55`,
-                }}
-              >
-                {emoji}
-              </div>
+              {tokenImages.get(l.address.toLowerCase()) ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={tokenImages.get(l.address.toLowerCase())}
+                  alt=""
+                  className="h-12 w-12 shrink-0 rounded-xl border object-cover transition-transform group-hover:scale-105"
+                  style={{ borderColor: `${color}55` }}
+                />
+              ) : (
+                <div
+                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-xl transition-transform group-hover:scale-105"
+                  style={{
+                    background: `linear-gradient(135deg, ${color}30, ${color}0d)`,
+                    border: `1px solid ${color}55`,
+                  }}
+                >
+                  {emoji}
+                </div>
+              )}
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   <span className="truncate font-bold text-foreground text-lg">${l.symbol}</span>

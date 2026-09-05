@@ -45,6 +45,8 @@ export type SwapToken = {
   balance: bigint;
   /** Defaults to 18 (WAD). Set to 8 for cbBTC. */
   decimals?: number;
+  /** A launched coin's pinned artwork, shown in place of the letter badge. */
+  imageUrl?: string;
 };
 
 /// One entry in a token picker attached to a Pay/Receive pill. `key` is what's reported back
@@ -100,10 +102,13 @@ export type SwapCardProps = {
 /// button, opening a small menu of icons + symbols, when `options` has more than one entry.
 function TokenPill({
   symbol,
+  imageUrl,
   options,
   onChange,
 }: {
   symbol: string;
+  /** The coin's own artwork (token metadata), shown instead of the letter badge. */
+  imageUrl?: string;
   options?: TokenOption[];
   onChange?: (key: string) => void;
 }) {
@@ -111,7 +116,7 @@ function TokenPill({
   if (!options || options.length < 2 || !onChange) {
     return (
       <span className="flex items-center gap-1.5 pl-1.5 pr-3 py-1.5 rounded-full bg-surface-2 text-sm font-semibold text-foreground">
-        <TokenIcon symbol={symbol} size={20} />
+        <TokenIcon symbol={symbol} size={20} imageUrl={imageUrl} />
         {symbol}
       </span>
     );
@@ -123,7 +128,7 @@ function TokenPill({
         onClick={() => setOpen((o) => !o)}
         className="flex items-center gap-1.5 pl-1.5 pr-2 py-1.5 rounded-full bg-surface-2 text-sm font-semibold text-foreground hover:brightness-110 transition-[filter]"
       >
-        <TokenIcon symbol={symbol} size={20} />
+        <TokenIcon symbol={symbol} size={20} imageUrl={imageUrl} />
         {symbol}
         <svg className={`w-3.5 h-3.5 text-muted transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
@@ -316,7 +321,7 @@ export default function SwapCard({
             inputMode="decimal"
             className="min-w-0 flex-1 bg-transparent font-mono text-3xl text-foreground outline-none placeholder:text-muted"
           />
-          <TokenPill symbol={inputToken.symbol} options={inputTokenOptions} onChange={onInputTokenChange} />
+          <TokenPill symbol={inputToken.symbol} imageUrl={inputToken.imageUrl} options={inputTokenOptions} onChange={onInputTokenChange} />
         </div>
         {inputUsdLabel ? <div className="mt-1 text-xs text-muted">{inputUsdLabel}</div> : null}
       </div>
@@ -337,7 +342,7 @@ export default function SwapCard({
         </div>
         <div className="flex items-center gap-2">
           <span className="flex-1 truncate font-mono text-3xl text-foreground">{quoteLabel || "0"}</span>
-          <TokenPill symbol={outputToken.symbol} options={outputTokenOptions} onChange={onOutputTokenChange} />
+          <TokenPill symbol={outputToken.symbol} imageUrl={outputToken.imageUrl} options={outputTokenOptions} onChange={onOutputTokenChange} />
         </div>
         {outputUsdLabel ? <div className="mt-1 text-xs text-muted">{outputUsdLabel}</div> : null}
       </div>

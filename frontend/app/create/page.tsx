@@ -16,7 +16,7 @@ import { withActiveSigner } from "@/lib/activeSigner";
 
 export default function CreatePage() {
   const router = useRouter();
-  const { addresses, refreshLaunches } = useAppState();
+  const { addresses, launches, refreshLaunches } = useAppState();
   const [name, setName] = useState("");
   const [ticker, setTicker] = useState("");
   const [buyIn, setBuyIn] = useState("");
@@ -24,6 +24,17 @@ export default function CreatePage() {
   const [feeInHfyc, setFeeInHfyc] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  // After a failed launch, the wallet may STILL be confirming the first transaction (the 120s
+  // UI timeout gives up long before MetaMask does). Locking the launch button through a cooldown
+  // turns a blind retry -- which mints a second, identical coin -- into a deliberate wait.
+  const [retryLockUntil, setRetryLockUntil] = useState(0);
+  const [nowTick, setNowTick] = useState(Date.now());
+  const retryLocked = Date.now() < retryLockUntil;
+  useEffect(() => {
+    if (!retryLocked) return;
+    const id = setInterval(() => setNowTick(Date.now()), 500);
+    return () => clearInterval(id);
+  }, [retryLocked]);
   const [error, setError] = useState<string | null>(null);
   const wallet = useWallet(addresses);
 
@@ -122,6 +133,18 @@ export default function CreatePage() {
   // other buyer pays), plus gas.
   const willPayLabel = "0.0005 ETH launch fee" + (buyInWad > 0n && quote ? " + optional first buy" : "") + " + gas";
 
+  // Duplicate-launch guide: the pads are permissionless, so nothing on-chain stops a second
+  // "$LEV" -- but users rarely MEAN to mint a competing twin of their own coin, and the table
+  // gives the pair identical rows that are easy to mix up. Detect a matching ticker or name
+  // among live launches, warn while typing, and require an explicit confirmation on submit.
+  const tickerUpper = ticker.trim().toUpperCase();
+  const nameLower = name.trim().toLowerCase();
+  const duplicateSymbol =
+    tickerUpper !== "" ? launches.find((l) => l.symbol.toUpperCase() === tickerUpper) : undefined;
+  const duplicateName =
+    nameLower !== "" ? launches.find((l) => l.name.toLowerCase() === nameLower) : undefined;
+  const duplicate = duplicateSymbol ?? duplicateName;
+
   async function submit() {
     if (!addresses) {
       setError("No deployment found. Deploy the contracts from the local console first.");
@@ -134,6 +157,19 @@ export default function CreatePage() {
     if (!name.trim() || !ticker.trim()) {
       setError("Name and ticker are required.");
       return;
+    }
+    if (duplicate) {
+      const what = duplicateSymbol
+        ? `the ticker $${tickerUpper} is already live`
+        : `the name "${name.trim()}" is already live`;
+      if (
+        !window.confirm(
+          `Careful: ${what} ("${duplicate.name}" / $${duplicate.symbol}). ` +
+            "Launching now creates a SECOND, competing token with the same identity. Launch anyway?",
+        )
+      ) {
+        return;
+      }
     }
     if (buyInInvalid) {
       setError("Buy-in amount isn't a valid number.");
@@ -208,7 +244,11 @@ export default function CreatePage() {
       refreshLaunches();
       router.push(`/coin/${launchAddress}`);
     } catch (e) {
-      setError(humanizeError(e, "Could not create the coin."));
+      setError(
+        humanizeError(e, "Could not create the coin.") +
+          " Before retrying, check Explore — your wallet may still confirm the first launch.",
+      );
+      setRetryLockUntil(Date.now() + 45_000);
       import("@/lib/sessionLog").then((m) => m.logError("createLaunch", e)).catch(() => {});
     } finally {
       setBusy(false);
@@ -291,6 +331,15 @@ export default function CreatePage() {
             </Field>
           </div>
 
+          {duplicate ? (
+            <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-300">
+              {duplicateSymbol
+                ? `A coin with the ticker $${tickerUpper} ("${duplicate.name}") already exists.`
+                : `A coin named "${duplicate.name}" ($${duplicate.symbol}) already exists.`}{" "}
+              Launching again creates a separate, competing token — make sure this is intentional.
+            </div>
+          ) : null}
+
           <div className="space-y-1">
             <div className="flex items-baseline justify-between">
               <span className="text-xs text-muted">Description (optional)</span>
@@ -308,7 +357,7 @@ export default function CreatePage() {
 
           {/* Token image — stored on Arweave (permanent, content-addressed) */}
           <div className="space-y-1">
-            <div className="text-xs text-muted">Token image (Arweave, permanent)</div>
+            <div className="text-xs text-muted">Token image (pinned to IPFS)</div>
             <div className="flex items-center gap-2.5">
               {imagePreview ? (
                 <img src={imagePreview} alt="preview" className="h-11 w-11 rounded-lg object-cover border border-border" />
@@ -521,10 +570,16 @@ export default function CreatePage() {
           ) : (
             <button
               onClick={submit}
-              disabled={busy || buyInInvalid || insufficient || exceedsCap}
+              disabled={busy || retryLocked || buyInInvalid || insufficient || exceedsCap}
               className="w-full rounded-lg bg-accent py-2.5 text-sm font-semibold text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-50"
             >
-              {busy ? status ?? "Launching..." : buyInWad > 0n ? "Create coin & buy" : "Create coin"}
+              {busy
+                ? status ?? "Launching..."
+                : retryLocked
+                  ? `Wait ${Math.ceil((retryLockUntil - nowTick) / 1000)}s — check Explore first`
+                  : buyInWad > 0n
+                    ? "Create coin & buy"
+                    : "Create coin"}
             </button>
           )}
         </div>

@@ -102,6 +102,10 @@ type LaunchCache = {
   /// forward from nextFromBlock.
   version: number;
   nextFromBlock: number;
+  /// Set after the below-the-deployment-floor extension has run once (see the extension sweep in
+  /// fetchLaunchStatsUncoordinated) so a coin with genuinely no pre-floor history doesn't sweep
+  /// again on every refresh.
+  extendedBelowFloor?: boolean;
   trades: TradePoint[];
   traders: Set<string>;
   /// "tx:logIndex" of every event already recorded. The in-flight guard below prevents the overlap
@@ -288,29 +292,43 @@ async function fetchLaunchStatsUncoordinated(
   if (cached.nextFromBlock <= head) {
     try {
       const from = cached.nextFromBlock;
-      const [curveBuys, curveSells, poolBuys, poolSells, protecteds, relevereds, seniorReleaseds, paireds, reserveRebalances, seniorNetteds] = await Promise.all([
-        launch.queryFilter(launch.filters.CurveBuy(), from, head),
-        launch.queryFilter(launch.filters.CurveSell(), from, head),
-        launch.queryFilter(launch.filters.PoolBuy(), from, head),
-        launch.queryFilter(launch.filters.PoolSell(), from, head),
-        launch.queryFilter(launch.filters.Protected(), from, head),
-        launch.queryFilter(launch.filters.Relevered(), from, head),
-        launch.queryFilter(launch.filters.SeniorReleased(), from, head),
-        launch.queryFilter(launch.filters.Paired(), from, head),
-        launch.queryFilter(launch.filters.RebalancedToReserve(), from, head),
-        launch.queryFilter(launch.filters.SeniorNetted(), from, head),
-      ]);
+      // Scanned in chunks of 10k blocks, all ten filters per chunk in parallel. A single query
+      // over the whole range fails once the deployment is more than ~40k blocks old -- the public
+      // RPC rejects wide getLogs ranges -- and that failure was swallowed into an EMPTY trade log,
+      // which is why fresh browsers on levera.fun saw "No trades yet" for coins that had trades.
+      // Steady state (one chunk) costs the same ten requests as before.
+      const all: (ethers.EventLog | ethers.Log)[] = [];
+      for (let start = from; start <= head; start += 10_000) {
+        const to = Math.min(start + 9_999, head);
+        const [
+          curveBuys, curveSells, poolBuys, poolSells, protecteds,
+          relevereds, seniorReleaseds, paireds, reserveRebalances, seniorNetteds,
+        ] = await Promise.all([
+          launch.queryFilter(launch.filters.CurveBuy(), start, to),
+          launch.queryFilter(launch.filters.CurveSell(), start, to),
+          launch.queryFilter(launch.filters.PoolBuy(), start, to),
+          launch.queryFilter(launch.filters.PoolSell(), start, to),
+          launch.queryFilter(launch.filters.Protected(), start, to),
+          launch.queryFilter(launch.filters.Relevered(), start, to),
+          launch.queryFilter(launch.filters.SeniorReleased(), start, to),
+          launch.queryFilter(launch.filters.Paired(), start, to),
+          launch.queryFilter(launch.filters.RebalancedToReserve(), start, to),
+          launch.queryFilter(launch.filters.SeniorNetted(), start, to),
+        ]);
+        all.push(
+          ...curveBuys, ...curveSells, ...poolBuys, ...poolSells, ...protecteds,
+          ...relevereds, ...seniorReleaseds, ...paireds, ...reserveRebalances, ...seniorNetteds,
+        );
+      }
 
-      const all = [...curveBuys, ...curveSells, ...poolBuys, ...poolSells, ...protecteds, ...relevereds, ...seniorReleaseds, ...paireds, ...reserveRebalances, ...seniorNetteds].filter(
-        (e): e is ethers.EventLog => "args" in e
-      );
+      const allEvents = all.filter((e): e is ethers.EventLog => "args" in e);
       // Chronological within the batch: "first vs last price in a window" is only meaningful in
       // execution order, and queryFilter results arrive grouped by event type, not by time.
-      all.sort((a, b) => a.blockNumber - b.blockNumber || a.index - b.index);
+      allEvents.sort((a, b) => a.blockNumber - b.blockNumber || a.index - b.index);
 
-      const times = await blockTimes(all.map((e) => e.blockNumber));
+      const times = await blockTimes(allEvents.map((e) => e.blockNumber));
 
-      for (const e of all) {
+      for (const e of allEvents) {
         const ts = times.get(e.blockNumber);
         if (ts === undefined) continue;
         const eventKey = `${e.transactionHash}:${e.index}`;
@@ -462,6 +480,89 @@ async function fetchLaunchStatsUncoordinated(
       launchCache.set(key, cached);
     } catch {
       // A failed scan leaves the cache untouched so the next refresh retries the same range.
+    }
+  }
+
+  // Deep-linked coins from EARLIER deployments. The deployment floor above assumes nothing worth
+  // scanning predates the current deployment -- true for coins launched through the polled list,
+  // false for any older coin whose URL someone opens after a redeploy (old bookmarks, shared
+  // links). For those, every trade sits BELOW the floor and the page reads "No trades yet" over
+  // a coin that has them. So when a coin shows no trades at all and the floor has not been
+  // extended yet, sweep the pre-floor history once: per event, one address+topic-filtered
+  // getLogs from genesis to the floor (the node answers filtered queries over huge ranges; it is
+  // the unfiltered wide ranges that get rejected). Runs at most once per launch per session --
+  // a coin with genuinely no pre-floor history pays a handful of empty queries a single time.
+  if (!cached.extendedBelowFloor && scanStartBlock > 0 && cached.trades.filter(isTrade).length === 0) {
+    // Gate: only sweep when the address has NO activity above the floor at all. Deployments on
+    // this chain reuse contract addresses (fresh deployer nonce sequences hand the same address
+    // to a different token), so a coin of the CURRENT deployment always has its creation logs
+    // above the floor -- sweeping below it for such an address would attribute a previous
+    // deployment's token history to the new coin. Zero above-floor logs means a deep-linked
+    // address nothing has reused: its pre-floor history is genuinely its own.
+    let aboveFloorLogs = -1;
+    try {
+      const head2 = await getProvider().getBlockNumber();
+      const hex = (n: number) => "0x" + n.toString(16);
+      aboveFloorLogs = 0;
+      for (let start = scanStartBlock; start <= head2; start += 5000) {
+        const end = Math.min(start + 4999, head2);
+        const raw = (await provider.send("eth_getLogs", [
+          { address: launchAddress, fromBlock: hex(start), toBlock: hex(end) },
+        ])) as unknown[];
+        aboveFloorLogs += raw.length;
+        if (aboveFloorLogs > 0) break;
+      }
+    } catch {
+      aboveFloorLogs = -1; // cannot tell -- do not sweep
+    }
+    cached.extendedBelowFloor = true;
+    if (aboveFloorLogs !== 0) return { ...EMPTY_STATS, createdAt: creationTime };
+    const hex = (n: number) => "0x" + n.toString(16);
+    for (const name of ["CurveBuy", "CurveSell", "PoolBuy", "PoolSell"]) {
+      try {
+        const topicHash = launch.interface.getEvent(name)?.topicHash;
+        if (!topicHash) continue;
+        const raw = (await provider.send("eth_getLogs", [
+          {
+            address: launchAddress,
+            topics: [[topicHash]],
+            fromBlock: hex(0),
+            toBlock: hex(scanStartBlock - 1),
+          },
+        ])) as { blockNumber: string; transactionHash: string; logIndex: string; topics: string[]; data: string }[];
+        const times = await blockTimes(raw.map((l) => Number(l.blockNumber)));
+        for (const log of raw) {
+          const parsed = launch.interface.parseLog({ topics: log.topics, data: log.data });
+          if (!parsed || parsed.name !== name) continue;
+          const eventKey = `${log.transactionHash}:${log.logIndex ?? 0}`;
+          if (cached.seen.has(eventKey)) continue;
+          const ts = times.get(Number(log.blockNumber));
+          if (ts === undefined) continue;
+          const collateral = (parsed.args.ethIn ?? parsed.args.ethOut) as bigint;
+          const tokens = (parsed.args.tokensOut ?? parsed.args.tokensIn) as bigint;
+          if (tokens === 0n) continue;
+          const price = tradePrice(collateral, tokens, collateralPriceUsd, cached.quoteScale);
+          if (price === null) continue;
+          const trader = (parsed.args[0] as string).toLowerCase();
+          cached.seen.add(eventKey);
+          cached.traders.add(trader);
+          cached.trades.push({
+            ts,
+            rawCollateral: collateral,
+            rawTokens: tokens,
+            priceUsd: price,
+            volumeUsd: collateralUsd(collateral, collateralPriceUsd, cached.quoteScale),
+            collateral: toQuoteAmount(collateral, cached.quoteScale),
+            tokenAmount: Number(tokens) / 1e18,
+            trader,
+            isBuy: name === "CurveBuy" || name === "PoolBuy",
+            type: name === "CurveBuy" || name === "PoolBuy" ? "buy" : "sell",
+            tx: log.transactionHash,
+          });
+        }
+      } catch {
+        // one event type failing must not sink the sweep
+      }
     }
   }
 

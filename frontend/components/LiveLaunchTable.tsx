@@ -7,6 +7,7 @@ import { LaunchSummary, TOTAL_SUPPLY_WAD, displayQuoteSymbol } from "@/lib/launc
 const TOTAL_SUPPLY = Number(TOTAL_SUPPLY_WAD / 10n ** 18n);
 import PriceLabel from "@/components/PriceLabel";
 import TokenIcon from "@/components/TokenIcon";
+import { useTokenImages } from "@/lib/tokenMetadata";
 import { timeAgo } from "@/lib/utils";
 
 const PALETTE = ["#ECE3D1", "#22c55e", "#38bdf8", "#f472b6", "#fbbf24", "#a78bfa", "#fb7185", "#34d399"];
@@ -117,6 +118,7 @@ export default function LiveLaunchTable({
   launches: LaunchSummary[];
   onSelect: (launch: LaunchSummary) => void;
 }) {
+  const tokenImages = useTokenImages(launches.map((l) => l.address));
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
@@ -275,12 +277,22 @@ export default function LiveLaunchTable({
                 <td className="px-3 py-3 text-xs text-muted">{i + 1}</td>
                 <td className="px-3 py-3">
                   <div className="flex items-center gap-2.5">
-                    <div
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-base"
-                      style={{ backgroundColor: `${color}22`, border: `1px solid ${color}55` }}
-                    >
-                      {emoji}
-                    </div>
+                    {tokenImages.get(l.address.toLowerCase()) ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={tokenImages.get(l.address.toLowerCase())}
+                        alt=""
+                        className="h-8 w-8 shrink-0 rounded-full border object-cover"
+                        style={{ borderColor: `${color}55` }}
+                      />
+                    ) : (
+                      <div
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-base"
+                        style={{ backgroundColor: `${color}22`, border: `1px solid ${color}55` }}
+                      >
+                        {emoji}
+                      </div>
+                    )}
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className="truncate text-sm font-semibold text-foreground">{l.name}</span>

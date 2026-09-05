@@ -12,6 +12,7 @@ import { signEip2612, tokenSupportsPermit } from "./lyc";
 import { getManagedSigner, getProvider, withSignerLock } from "./signers";
 import { readEthUsdWad } from "./oracle";
 import { assertWalletSeesApp, withActiveSigner } from "./activeSigner";
+import { connectedAddress } from "./activeSigner";
 import { computePnl, recordTrade, summarizePosition } from "./ledger";
 import { EMPTY_STATS, LaunchStats, fetchCreationTimes, fetchLaunchStats, resetStatsCache } from "./launchStats";
 import { sendReplacing, walletTxOverrides } from "./txFees";
@@ -345,6 +346,34 @@ export type CreateLaunchParams = {
 
 let createInFlight: Promise<string> | null = null;
 
+/// Recovery for the UI-timeout path: the page races this promise against a 120s timer and can
+/// declare failure while MetaMask is still confirming. See createLaunch's catch for why that
+/// must not simply surface as an error.
+async function findLaunchCreatedRecently(
+  factoryAddress: string,
+  creator: string,
+  symbol: string,
+): Promise<string | null> {
+  const provider = getProvider();
+  const factory = new ethers.Contract(factoryAddress, LaunchpadFactoryAbi, provider);
+  const filter = factory.filters.LaunchCreated(null, creator);
+  const head = await provider.getBlockNumber();
+  const wanted = symbol.trim().toUpperCase();
+  // 10k-block chunks: the public RPC rejects getLogs ranges wider than that.
+  for (let start = Math.max(0, head - 100_000); start <= head; start += 10_000) {
+    const to = Math.min(start + 9_999, head);
+    const events = (await factory.queryFilter(filter, start, to)).filter(
+      (e): e is ethers.EventLog => "args" in e,
+    );
+    for (const e of events) {
+      if ((e.args?.symbol as string ?? "").toUpperCase() === wanted) {
+        return e.args?.launch as string;
+      }
+    }
+  }
+  return null;
+}
+
 export async function createLaunch(
   addresses: DeployedAddresses,
   params: CreateLaunchParams
@@ -354,9 +383,30 @@ export async function createLaunch(
       "A coin is already being created. Wait for that MetaMask transaction to finish before starting another.",
     );
   }
-  createInFlight = doCreateLaunch(addresses, params).finally(() => {
-    createInFlight = null;
-  });
+  createInFlight = doCreateLaunch(addresses, params)
+    .catch(async (e: unknown) => {
+      // The UI races this promise with a 120s timer and can show an error while MetaMask is
+      // still confirming -- and that error tells the user to "try again", which mints a second
+      // identical coin once the first lands. Before giving up, check whether the launch
+      // actually made it on-chain and return it as success if so.
+      try {
+        const creator = await connectedAddress();
+        if (creator) {
+          const recovered = await findLaunchCreatedRecently(
+            params.quote?.factory ?? addresses.factory,
+            creator,
+            params.symbol,
+          );
+          if (recovered) return recovered;
+        }
+      } catch {
+        // recovery is best-effort; the original error stands
+      }
+      throw e;
+    })
+    .finally(() => {
+      createInFlight = null;
+    });
   return createInFlight;
 }
 
