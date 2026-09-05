@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ethers } from "ethers";
 import { useAppState } from "@/lib/appState";
 import { useWallet } from "@/lib/wallet";
@@ -25,6 +25,7 @@ import { TX_TIMEOUT_LONG_MS, withTimeout } from "@/lib/txTimeout";
 import ConnectWalletButton from "@/components/ConnectWalletButton";
 import { spendableEth } from "@/lib/wallet";
 import { formatApr, useLycMetrics, NavSample } from "@/lib/lycMetrics";
+import { TARGETING_TESTNET, ROBINHOOD_TESTNET_ID, ROBINHOOD_MAINNET_ID, explorerAddressUrl } from "@/lib/chains";
 import SwapCard from "@/components/SwapCard";
 import MobileSwapSheet from "@/components/MobileSwapSheet";
 import { useIsDesktop } from "@/lib/useMediaQuery";
@@ -291,7 +292,21 @@ export default function EarnPage() {
             accent
           />
           <div className="w-px bg-border" />
-          <StatBlock label="Market Cap" value={marketCap >= 1e9 ? `$${(marketCap / 1e9).toFixed(2)}B` : marketCap >= 1e6 ? `$${(marketCap / 1e6).toFixed(2)}M` : `$${marketCap.toFixed(2)}`} />
+          <StatBlock
+            label="Market Cap"
+            value={marketCap >= 1e9 ? `$${(marketCap / 1e9).toFixed(2)}B` : marketCap >= 1e6 ? `$${(marketCap / 1e6).toFixed(2)}M` : `$${marketCap.toFixed(2)}`}
+            foot={addresses?.lyc ? (
+              <a
+                href={explorerAddressUrl(TARGETING_TESTNET ? ROBINHOOD_TESTNET_ID : ROBINHOOD_MAINNET_ID, addresses.lyc)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-muted hover:text-foreground transition-colors"
+                title="The contract holding every asset backing vLYC — idle cash plus collateral in the pools."
+              >
+                {addresses.lyc.slice(0, 6)}…{addresses.lyc.slice(-4)} ↗
+              </a>
+            ) : undefined}
+          />
           <div className="w-px bg-border" />
           {/* The lend side of the book: vLYC cash currently rented out to xTOKEN pools. Settled
               occupancy only -- pending rent is accrued but not yet on-chain, so it shows the
@@ -351,7 +366,7 @@ export default function EarnPage() {
   );
 }
 
-function StatBlock({ label, value, badge, badgeColor, accent }: { label: string; value: string; badge?: string; badgeColor?: string; accent?: boolean }) {
+function StatBlock({ label, value, badge, badgeColor, accent, foot }: { label: string; value: string; badge?: string; badgeColor?: string; accent?: boolean; foot?: ReactNode }) {
   return (
     <div className="flex-1 px-4 py-3">
       <div className="flex items-center gap-2">
@@ -359,6 +374,7 @@ function StatBlock({ label, value, badge, badgeColor, accent }: { label: string;
         {badge ? <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${badgeColor ?? "text-muted bg-surface"}`}>{badge}</span> : null}
       </div>
       <div className={`mt-1 font-mono text-base sm:text-lg ${accent ? "text-accent" : "text-foreground"}`}>{value}</div>
+      {foot ? <div className="mt-0.5 text-[10px]">{foot}</div> : null}
     </div>
   );
 }
