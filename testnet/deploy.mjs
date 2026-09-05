@@ -250,6 +250,20 @@ async function main() {
     await sendTx("cbbtc.grantRole(faucet)", () => cbbtc.grantRole(MINTER_ROLE, faucetAddress));
   }
 
+  // A SECOND faucet wallet, if the deployed frontend's own faucet key differs from the one in
+  // this .env — which is exactly the production setup: Vercel holds its own FAUCET_PRIVATE_KEY,
+  // and its address only gets roles if it is named here. Forgetting this is what broke token
+  // claims on app.levera.fun after every redeploy: ETH claims still worked (they are plain
+  // transfers), but every token mint reverted for lack of MINTER_ROLE. The address is public —
+  // set FAUCET_EXTRA_ADDRESS in testnet/.env to the frontend deployment's faucet wallet.
+  const extraFaucet = process.env.FAUCET_EXTRA_ADDRESS;
+  if (extraFaucet && /^0x[0-9a-fA-F]{40}$/.test(extraFaucet)) {
+    log(`\nGranting MINTER_ROLE to the extra (frontend) faucet ${extraFaucet}...`);
+    await sendTx("weth.grantRole(extra faucet)", () => weth.grantRole(MINTER_ROLE, extraFaucet));
+    await sendTx("usdg.grantRole(extra faucet)", () => usdg.grantRole(MINTER_ROLE, extraFaucet));
+    await sendTx("cbbtc.grantRole(extra faucet)", () => cbbtc.grantRole(MINTER_ROLE, extraFaucet));
+  }
+
   log("\nMinting starter balances to the deployer (mock tokens — this is a prototype)...");
   await sendTx("mint USDG", () => usdg.mint(deployerAddress, 50_000n * WAD));
   await sendTx("mint WETH", () => weth.mint(deployerAddress, 100n * WAD));

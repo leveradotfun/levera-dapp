@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useAppState } from "@/lib/appState";
+import { TARGETING_TESTNET } from "@/lib/chains";
 import TopBar from "@/components/TopBar";
 import WalletMenu from "@/components/WalletMenu";
 
@@ -17,6 +18,18 @@ export default function SiteHeader() {
         <Link href="/" className="shrink-0 md:hidden" aria-label="levera">
           <img src="/logo.svg" alt="" className="h-6 w-6 rounded-md" />
         </Link>
+
+        {/* Network indicator: every deployment of this app is a testnet prototype, and people
+            should never have to check the RPC to know it. Rendered only when the app actually
+            targets testnet, so a future mainnet build goes dark automatically. */}
+        {TARGETING_TESTNET ? (
+          <span
+            className="hidden shrink-0 rounded-md bg-accent px-2 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-accent-ink sm:inline-block"
+            title="All assets here are testnet mocks. Nothing on this site has real value."
+          >
+            Testnet
+          </span>
+        ) : null}
 
         <div className="min-w-0 flex-1 md:w-72 md:flex-none">
           <TopBar onSearch={setSearchQuery} />
