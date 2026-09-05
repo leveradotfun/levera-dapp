@@ -59,6 +59,10 @@ export type DeployedAddresses = {
   /// Wraps native ETH at the edge for WETH-quoted launches. `Launch` takes its quote asset as a
   /// plain ERC-20 and nothing else, which is what lets cbBTC be a quote asset at all.
   quoteZap?: string;
+  /// One-transaction xTOKEN exits into any listed asset: sells on the launch, then routes
+  /// quote -> USDG -> target across the earn registry's venues in the same tx. Optional because
+  /// deployments that predate it fall back to the multi-transaction sell + swap path.
+  xzap?: string;
   /// The second quote asset: 8 decimals, priced off Robinhood Chain's live CBBTC/USD feed. The
   /// token is a stand-in — the feed is real, the ERC-20 is not deployed on the chain yet.
   cbbtc?: string;
@@ -109,6 +113,7 @@ export function normalizeDeployedAddresses(raw: unknown): DeployedAddresses | nu
     feed: str("feed"),
     pairFactory: str("pairFactory"),
     quoteZap: str("quoteZap"),
+    xzap: str("xzap"),
     cbbtc: str("cbbtc"),
     cbbtcOracle: str("cbbtcOracle"),
     cbbtcRouter: str("cbbtcRouter"),

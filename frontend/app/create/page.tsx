@@ -500,7 +500,7 @@ export default function CreatePage() {
                 <span className="block text-sm font-semibold text-foreground">2x leverage</span>
                 <span className="block text-[11px] leading-relaxed text-muted">
                   {leverageEnabled
-                    ? "Attaches whatever LYC is idle at graduation (up to 2x), then tops up as cash arrives. If senior is scarce, quieter 2x coins get peeled into this one. You pay occupancy rent and a pairing fee only on the dollars actually attached."
+                    ? "Attaches whatever vLYC is idle at graduation (up to 2x), then tops up as cash arrives. If senior is scarce, quieter 2x coins get peeled into this one. You pay occupancy rent and a pairing fee only on the dollars actually attached."
                     : "Normal launch. After the curve fills it trades as a 1x market and never pulls LYC senior."}
                 </span>
               </span>
@@ -513,7 +513,7 @@ export default function CreatePage() {
                   {(
                     [
                       { lyc: false, label: quoteName },
-                      { lyc: true, label: "LYC" },
+                      { lyc: true, label: "vLYC" },
                     ] as const
                   ).map((opt) => (
                     <button

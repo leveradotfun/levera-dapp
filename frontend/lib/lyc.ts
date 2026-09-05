@@ -204,10 +204,34 @@ async function ensureUsdgAllowance(addresses: DeployedAddresses, owner: string, 
 export async function mintWithUsdg(addresses: DeployedAddresses, usdAmount: bigint) {
   await assertWalletSeesApp(addresses.factory);
   return withActiveSigner(async ({ signer, address }) => {
-    await ensureUsdgAllowance(addresses, address, usdAmount, signer);
     const h = getLyc(addresses.lyc, signer);
+    const allowance: bigint = await new ethers.Contract(addresses.usdg, ERC20_ABI, signer).allowance(address, addresses.lyc);
     const g = await fetchLycGlobal(addresses);
     const sharesMinted = quoteMint(g, usdAmount);
+
+    // Permit path: USDG speaks EIP-2612 and the pool has a permit-consuming mint, so a short
+    // allowance costs ONE typed-data signature inside the mint tx — no approve tx first.
+    if (allowance < usdAmount && (await tokenSupportsPermit(addresses.usdg, signer.provider!))) {
+      const deadline = BigInt(Math.floor(Date.now() / 1000) + 1800);
+      const sig = await signEip2612(signer, addresses.usdg, addresses.lyc, usdAmount, deadline);
+      const { v, r, s } = ethers.Signature.from(sig);
+      const receipt = await (
+        await sendReplacing(
+          address,
+          (o) =>
+            h
+              .getFunction("mintWithUsdgPermit(uint256,uint256,uint8,bytes32,bytes32)")(
+                usdAmount, deadline, v, r, s, o,
+              ),
+          2_000_000n,
+        )
+      ).wait();
+      const { logLycMint } = await import("./sessionLog");
+      logLycMint({ shares: sharesMinted.toString(), usdValue: usdAmount.toString(), paidInEth: false }).catch(() => {});
+      return receipt;
+    }
+
+    await ensureUsdgAllowance(addresses, address, usdAmount, signer);
     const receipt = await (await sendReplacing(address, (o) => h.mintWithUsdg(usdAmount, o), 2_000_000n)).wait();
     const { logLycMint } = await import("./sessionLog");
     logLycMint({

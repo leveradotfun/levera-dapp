@@ -24,13 +24,13 @@ export const metadata: Metadata = {
     title: "Levera - First leveraged memecoin launchpad",
     description: "Leveraged memecoin launchpad",
     url: "/",
-    images: [{ url: "/og-image.png", width: 800, height: 400, alt: "Levera" }],
+    images: [{ url: "/open-graph-image.png", width: 800, height: 400, alt: "Levera" }],
   },
   twitter: {
     card: "summary_large_image",
     title: "Levera - First leveraged memecoin launchpad",
     description: "Leveraged memecoin launchpad",
-    images: ["/og-image.png"],
+    images: ["open-graph-image.png"],
   },
 };
 

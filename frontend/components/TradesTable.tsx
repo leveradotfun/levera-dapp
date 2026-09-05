@@ -12,7 +12,7 @@ export interface Trade {
   amount: number;
   tokenAmount: number;
   timestamp: number;
-  /// Rebalance: USD moved (pairing/senior), for the tooltip. The table quotes ETH.
+  /// Rebalance: USD moved (pairing/vLYC), for the tooltip. The table quotes ETH.
   skimmedUsd?: number;
   newLoopLev?: number;
   /// Rebalance sub-type: "protect" (deleverage), "relever" (re-lever), "release" (senior reallocation), "paired" (first senior after graduation), "netted" (senior moved to a quieter pool), or "reserve" (excess vault collateral moved into the AMM reserve)
@@ -236,8 +236,8 @@ export default function TradesTable({
                         t.rebalanceType === "protect" ? `Vault ${quoteSymbol} sold for USDG — leverage down` :
                         t.rebalanceType === "relever" ? "Idle USDG bought vault collateral — leverage up" :
                         t.rebalanceType === "release" ? `Vault ${quoteSymbol} sold, senior moved to a louder coin` :
-                        t.rebalanceType === "paired" ? `First senior paired after graduation — ${t.skimmedUsd ? `$${t.skimmedUsd.toFixed(2)}` : ""} attached at ${t.newLoopLev?.toFixed(2) ?? "2.00"}x (LYC → pool, traced via 0x81B4…)` :
-                        t.rebalanceType === "netted" ? `Senior claim netted away to a quieter coin — ${t.skimmedUsd ? `$${t.skimmedUsd.toFixed(2)}` : ""} moved, leverage now ${t.newLoopLev?.toFixed(2) ?? "?"}x` :
+                        t.rebalanceType === "paired" ? `First vLYC paired after graduation — ${t.skimmedUsd ? `$${t.skimmedUsd.toFixed(2)}` : ""} attached at ${t.newLoopLev?.toFixed(2) ?? "2.00"}x (LYC → pool, traced via 0x81B4…)` :
+                        t.rebalanceType === "netted" ? `vLYC claim netted away to a quieter coin — ${t.skimmedUsd ? `$${t.skimmedUsd.toFixed(2)}` : ""} moved, leverage now ${t.newLoopLev?.toFixed(2) ?? "?"}x` :
                         t.rebalanceType === "reserve" ? `Excess vault ${quoteSymbol} moved into the AMM reserve — sell route backing topped up, leverage unchanged` :
                         "Protocol operation"
                       }

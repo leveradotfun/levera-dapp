@@ -147,7 +147,7 @@ export default function LaunchDetail({
   // Sell-side mirror of payToken. "ETH" means the launch's quote asset -- native ether via the
   // QuoteZap for a WETH-quoted coin, plain cbBTC otherwise. "WETH" (WETH-quoted coins only) keeps
   // the quote as the ERC-20; "USDG" routes the proceeds through the launch's router into cash.
-  const [receiveToken, setReceiveToken] = useState<"ETH" | "WETH" | "USDG">("ETH");
+  const [receiveToken, setReceiveToken] = useState<"ETH" | "WETH" | "USDG" | "CBBTC">("ETH");
   const [quoteTokenBalance, setQuoteTokenBalance] = useState<bigint>(0n);
   const [quote, setQuote] = useState<bigint | null>(null);
   const [busy, setBusy] = useState(false);
@@ -258,7 +258,7 @@ export default function LaunchDetail({
   const paySymbol = payToken === "USDG" ? "USDG" : payToken === "WETH" ? "WETH" : quoteSymbol;
   // What the Receive pill shows on a sell: the picked exit asset, with "ETH" resolving to the
   // quote's display symbol (native ETH for a WETH coin, cbBTC for a cbBTC one).
-  const receiveSymbol = receiveToken === "USDG" ? "USDG" : receiveToken === "WETH" && wrapsNative ? "WETH" : quoteSymbol;
+  const receiveSymbol = receiveToken === "USDG" ? "USDG" : receiveToken === "CBBTC" ? "cbBTC" : receiveToken === "WETH" && wrapsNative ? "WETH" : quoteSymbol;
   // What a buy actually spends from: native gas for the "ETH" tab on a WETH coin, the wallet's own
   // WETH ERC-20 for the "WETH" tab, the quote ERC-20 for everything else (cbBTC), USDG when paying
   // in cash.
@@ -533,7 +533,10 @@ export default function LaunchDetail({
         // converts after the fill. The USDG minOut re-derives from the same oracle the router
         // prices at, so it only has to absorb drift between the two transactions.
         const sellReceive =
-          receiveToken === "USDG" ? ("USDG" as const) : wrapsNative ? (receiveToken === "WETH" ? ("QUOTE" as const) : ("ETH" as const)) : ("QUOTE" as const);
+          receiveToken === "USDG" ? ("USDG" as const)
+          : receiveToken === "CBBTC" && addresses.cbbtc ? ("CBBTC" as const)
+          : wrapsNative ? (receiveToken === "WETH" ? ("QUOTE" as const) : ("ETH" as const))
+          : ("QUOTE" as const);
         const expectedUsdg = quoteToUsdg(expectedOut);
         const minUsdgOut = (expectedUsdg * (10000n - BigInt(slippageBps))) / 10000n;
         await withTimeout(sell(addresses, launch.address, amt, minOut, sellReceive, minUsdgOut), TX_TIMEOUT_MS, "Sell");
@@ -603,6 +606,7 @@ export default function LaunchDetail({
             ? [
                 { key: "ETH", symbol: quoteSymbol },
                 { key: "USDG", symbol: "USDG" },
+                ...(addresses?.cbbtc ? [{ key: "CBBTC", symbol: "cbBTC" }] : []),
                 ...(wrapsNative ? [{ key: "WETH", symbol: "WETH" }] : []),
               ]
             : undefined
@@ -680,7 +684,7 @@ export default function LaunchDetail({
       </div>
 
       <p className="text-[11px] text-muted text-center">
-        1.00% fee — 0.50% creator, up to 0.05% to LYC (scaled by how paired this pool is),
+        1.00% fee — 0.50% creator, up to 0.05% to vLYC (scaled by how paired this pool is),
         the rest to protocol.
       </p>
     </>
@@ -734,7 +738,7 @@ export default function LaunchDetail({
               <div className="flex justify-between gap-2"><span className="text-muted truncate">Token reserve</span><span className="font-mono text-foreground truncate">{tokenReserveAmountLabel} · {tokenReserveUsdLabel}</span></div>
               {launch.leverageEnabled ? (
                 <>
-                  <div className="flex justify-between gap-2"><span className="text-muted truncate">LYC vault</span><span className="font-mono text-foreground truncate">{fmtQuote(launch.vaultEth, quotePlaces)} {quoteSymbol}</span></div>
+                  <div className="flex justify-between gap-2"><span className="text-muted truncate">vLYC vault</span><span className="font-mono text-foreground truncate">{fmtQuote(launch.vaultEth, quotePlaces)} {quoteSymbol}</span></div>
                   <div className="flex justify-between gap-2"><span className="text-muted truncate">Occupancy paid</span><span className="font-mono text-foreground truncate">{usd(launch.occupancyPaidUsd)}</span></div>
                   <div className="flex justify-between gap-2"><span className="text-muted truncate">Pairing fees</span><span className="font-mono text-foreground truncate">{usd(launch.pairingFeesPaidUsd)}</span></div>
                 </>

@@ -7,6 +7,7 @@ import { MockERC20Abi } from "./artifacts/MockERC20";
 import { OracleSwapRouterAbi } from "./artifacts/OracleSwapRouter";
 import { MockWETHAbi } from "./artifacts/MockWETH";
 import { QuoteZapAbi } from "./artifacts/QuoteZap";
+import { XZapAbi } from "./artifacts/XZap";
 import { ANVIL_ACCOUNTS, DEPLOYER, DeployedAddresses } from "./chain";
 import { signEip2612, tokenSupportsPermit } from "./lyc";
 import { getManagedSigner, getProvider, withSignerLock } from "./signers";
@@ -778,7 +779,7 @@ export async function buy(
 /// What a seller walks away with. "ETH" is native ether via the QuoteZap (WETH-quoted coins only);
 /// "QUOTE" is the launch's quote ERC-20 as-is (WETH or cbBTC); "USDG" converts the quote proceeds
 /// through the launch's own router after the sell fills.
-export type SellReceive = "ETH" | "QUOTE" | "USDG";
+export type SellReceive = "ETH" | "QUOTE" | "USDG" | "CBBTC";
 
 export async function sell(
   addresses: DeployedAddresses,
@@ -795,6 +796,38 @@ export async function sell(
     const launch = getLaunch(launchAddress, signer);
     const graduated: boolean = await launch.graduated();
     const overrides = await walletTxOverrides(address, 2_000_000n);
+
+    // One-transaction exit via XZap whenever the seller wants ANYTHING other than the quote
+    // ERC-20 itself: the zap sells on the launch and routes quote -> USDG -> target in the same
+    // tx, so the seller signs once and never holds the intermediate quote. (ETH = address(0);
+    // the zap unwraps.) The xToken has no permit -- Launch sits on the bytecode size cap -- so
+    // the FIRST exit needs an approve tx; the max allowance is one-time and the zap is
+    // stateless, so every exit after that is a single signature.
+    if (receive !== "QUOTE" && addresses.xzap) {
+      const meme = new ethers.Contract(
+        launchAddress,
+        ["function approve(address,uint256) returns (bool)", "function allowance(address,address) view returns (uint256)"],
+        signer,
+      );
+      if ((await meme.allowance(address, addresses.xzap)) < tokensIn) {
+        await (await meme.approve(addresses.xzap, ethers.MaxUint256)).wait();
+      }
+      const output =
+        receive === "ETH" ? ethers.ZeroAddress
+        : receive === "USDG" ? addresses.usdg
+        : addresses.cbbtc ?? null;
+      if (!output) throw new Error("cbBTC is not part of this deployment.");
+      const zap = new ethers.Contract(addresses.xzap, XZapAbi as ethers.InterfaceAbi, signer);
+      // Floors: minOut guards the xToken->quote leg; the final leg re-checks inside the zap.
+      // USDG keeps the caller's dedicated floor; other outputs pass minOut in quote terms as a
+      // conservative stand-in plus the zap's own final-leg check.
+      const finalFloor = receive === "USDG" ? minUsdgOut : minOut;
+      const tx = await zap.sellTo(launchAddress, tokensIn, output, minOut, 0n, finalFloor, overrides);
+      const receipt = await tx.wait();
+      void graduated;
+      return receipt;
+    }
+
     // WETH-quoted coins settle native-ETH sells via the QuoteZap, matching the buy side and the
     // "Sold for X ETH" message. Every other receive needs the quote as an ERC-20 -- it is the
     // input the USDG leg below swaps, and WETH itself is a legitimate payout -- so those go

@@ -193,9 +193,9 @@ export default function EarnPage() {
           <SwapCard
             mode={swapMode}
             onModeChange={(m) => { setSwapMode(m); setDepositAmt(""); setRedeemAmt(""); }}
-            buyLabel="Buy LYC" sellLabel="Sell LYC"
-            inputToken={{ symbol: swapMode === "buy" ? paySymbol : "LYC", balance: swapMode === "buy" ? payBalance : (pos?.balance ?? 0n), decimals: swapMode === "buy" && payWith === "CBBTC" ? 8 : 18 }}
-            outputToken={{ symbol: swapMode === "buy" ? "LYC" : redeemAs === "CBBTC" ? "cbBTC" : redeemAs, balance: 0n }}
+            buyLabel="Buy vLYC" sellLabel="Sell vLYC"
+            inputToken={{ symbol: swapMode === "buy" ? paySymbol : "vLYC", balance: swapMode === "buy" ? payBalance : (pos?.balance ?? 0n), decimals: swapMode === "buy" && payWith === "CBBTC" ? 8 : 18 }}
+            outputToken={{ symbol: swapMode === "buy" ? "vLYC" : redeemAs === "CBBTC" ? "cbBTC" : redeemAs, balance: 0n }}
             inputTokenOptions={
               swapMode === "buy"
                 ? [
@@ -246,16 +246,16 @@ export default function EarnPage() {
                       : payWith === "CBBTC"
                         ? mintWithCollateral(addresses, addresses.cbbtc!, depositWei, cbbtcPriceWad, 8)
                         : mintWithUsdg(addresses, depositWei),
-                "Minted LYC",
-                `${depositAmt} ${paySymbol} → ${formatWad(mintQuote, 4)} LYC`,
+                "Minted vLYC",
+                `${depositAmt} ${paySymbol} → ${formatWad(mintQuote, 4)} vLYC`,
               )
             }
             onSell={() =>
               run(
                 "Redeem",
                 () => redeemLycTo(addresses, redeemWei, redeemAs),
-                "Redeemed LYC",
-                `${redeemAmt} LYC → ${
+                "Redeemed vLYC",
+                `${redeemAmt} vLYC → ${
                   redeemTokenEstimate !== null
                     ? redeemAs === "CBBTC"
                       ? ethers.formatUnits(redeemTokenEstimate, 8)
@@ -274,12 +274,12 @@ export default function EarnPage() {
       <div className="flex-1 min-w-0 space-y-4">
         {/* Stats bar */}
         <div className="flex items-stretch gap-0 overflow-hidden rounded-xl border border-border bg-card">
-          <StatBlock label="LYC Price" value={`$${formatWad(g?.nav ?? 0n, 4)}`}
+          <StatBlock label="vLYC Price" value={`$${formatWad(g?.nav ?? 0n, 4)}`}
             badge={navReturn !== 0 ? `${navReturn >= 0 ? "+" : ""}${navReturn.toFixed(2)}%` : "+0.00%"}
             badgeColor={navReturn >= 0 ? "text-green-400 bg-green-400/10" : "text-red-400 bg-red-400/10"} accent />
           <div className="w-px bg-border" />
           <StatBlock
-            label="LYC APY"
+            label="vLYC APY"
             value={
               apy.h24.ready && apy.h24.simpleApr !== null
                 ? formatApr(apy.h24.simpleApr)
@@ -332,8 +332,8 @@ export default function EarnPage() {
         </div>
       ) : (
         <MobileSwapSheet
-          triggerLabel={swapMode === "buy" ? "Buy LYC" : "Sell LYC"}
-          title="Mint or redeem LYC"
+          triggerLabel={swapMode === "buy" ? "Buy vLYC" : "Sell vLYC"}
+          title="Mint or redeem vLYC"
         >
           {swapContent}
         </MobileSwapSheet>
@@ -412,7 +412,7 @@ function NavChart({ samples }: { samples: NavSample[] }) {
 function PositionPanel({ pos, g, wallet }: { pos: LycPosition | null; g: LycGlobal | null; wallet: ReturnType<typeof useWallet> }) {
   if (!wallet.isConnected) return (<div className="rounded-xl border border-dashed border-border p-8 text-center"><p className="text-sm text-muted mb-3">Connect a wallet to see your position.</p><ConnectWalletButton className="rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-accent-ink" /></div>);
   if (!pos || !g) return (<div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[...Array(4)].map((_, i) => (<div key={i} className="rounded-xl border border-border bg-surface p-4 animate-pulse"><div className="h-3 w-16 bg-surface-2 rounded" /><div className="h-5 w-24 bg-surface-2 rounded mt-2" /></div>))}</div>);
-  return (<div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><PosStat label="LYC held" value={formatWad(pos.balance, 4)} /><PosStat label="Value" value={usd((pos.balance * g.nav) / WAD)} /><PosStat label="Max redeemable" value={formatWad(pos.maxRedeemable, 4)} /><PosStat label="Unlocked" value={formatWad(pos.unlocked, 4)} /></div>);
+  return (<div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><PosStat label="vLYC held" value={formatWad(pos.balance, 4)} /><PosStat label="Value" value={usd((pos.balance * g.nav) / WAD)} /><PosStat label="Max redeemable" value={formatWad(pos.maxRedeemable, 4)} /><PosStat label="Unlocked" value={formatWad(pos.unlocked, 4)} /></div>);
 }
 
 function PosStat({ label, value }: { label: string; value: string }) {

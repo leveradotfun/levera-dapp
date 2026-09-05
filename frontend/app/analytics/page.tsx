@@ -83,7 +83,7 @@ export default function AnalyticsPage() {
                 accent
               />
               <Stat
-                label="Senior — LYC"
+                label="vLYC — yield pool"
                 value={compactUsd(data.seniorUsd)}
                 sub={
                   data.lycGlobalCr > 0

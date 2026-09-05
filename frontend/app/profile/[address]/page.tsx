@@ -306,7 +306,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "open", label: "Open" },
   { key: "closed", label: "Closed" },
   { key: "activity", label: "Activity" },
-  { key: "lyc", label: "LYC" },
+  { key: "lyc", label: "vLYC" },
 ];
 
 function FollowButton({
@@ -1297,7 +1297,7 @@ function LycPanel({ global: g, position, pnl }: { global: LycGlobal | null; posi
                 >
                   {t.type === "mint" ? (isFeeMint ? "fee mint" : "mint") : "redeem"}
                 </span>
-                <span className="ml-2 text-sm font-semibold text-foreground">{formatWad(t.shares, 4)} LYC</span>
+                <span className="ml-2 text-sm font-semibold text-foreground">{formatWad(t.shares, 4)} vLYC</span>
                 <div className="text-xs text-muted">{t.timestamp > 0 ? `${timeAgo(t.timestamp)} ago` : "—"}</div>
               </div>
               <div className="flex shrink-0 items-center gap-3 text-right">

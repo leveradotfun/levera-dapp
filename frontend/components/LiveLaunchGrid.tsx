@@ -130,7 +130,7 @@ export default function LiveLaunchGrid({
               {l.graduated ? (
                 <span
                   className="ml-1 inline-flex shrink-0 items-center gap-1 rounded-full bg-green/15 px-2 py-0.5 text-[10px] font-semibold text-green"
-                  title={l.paired ? "Graduated — paired against LYC senior at 2x" : "Graduated — trading live on the AMM"}
+                  title={l.paired ? "Graduated — paired against vLYC at 2x" : "Graduated — trading live on the AMM"}
                 >
                   <svg className="h-2.5 w-2.5" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.7 5.3a1 1 0 010 1.4l-7.5 7.5a1 1 0 01-1.4 0l-3.5-3.5a1 1 0 111.4-1.4l2.8 2.79 6.8-6.8a1 1 0 011.4 0z" clipRule="evenodd" />
@@ -202,7 +202,7 @@ export default function LiveLaunchGrid({
                         ? "bg-blue-400/15 text-blue-400"
                         : "bg-surface text-muted"
                   }`}
-                  title={l.paired ? "Paired against LYC senior at 2x" : l.leverageEnabled ? "Graduated — pairs when LYC senior is available" : "Spot market"}
+                  title={l.paired ? "Paired against vLYC at 2x" : l.leverageEnabled ? "Graduated — pairs when LYC senior is available" : "Spot market"}
                 >
                   {l.paired ? "2x live" : l.leverageEnabled ? "1x · awaiting senior" : "spot"}
                 </span>

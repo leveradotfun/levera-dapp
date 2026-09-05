@@ -31,19 +31,6 @@
   },
   {
     "type": "function",
-    "name": "CALM_REDEEM_CR",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "COVERED_CR_WAD",
     "inputs": [],
     "outputs": [
@@ -109,32 +96,6 @@
   },
   {
     "type": "function",
-    "name": "MIN_YIELD_SAMPLE",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "OPTIMAL_UTILIZATION_WAD",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "REDEEM_FEE_BPS",
     "inputs": [],
     "outputs": [
@@ -188,19 +149,6 @@
   {
     "type": "function",
     "name": "WAD",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "YIELD_WINDOW",
     "inputs": [],
     "outputs": [
       {
@@ -957,6 +905,55 @@
   },
   {
     "type": "function",
+    "name": "mintWithCollateralPermit",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "pairPool",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "deadline",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "v",
+        "type": "uint8",
+        "internalType": "uint8"
+      },
+      {
+        "name": "r",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "s",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "hfycOut",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "mintWithEth",
     "inputs": [],
     "outputs": [
@@ -995,6 +992,45 @@
         "name": "usdAmount",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "hfycOut",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "mintWithUsdgPermit",
+    "inputs": [
+      {
+        "name": "usdAmount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "deadline",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "v",
+        "type": "uint8",
+        "internalType": "uint8"
+      },
+      {
+        "name": "r",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "s",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "outputs": [
@@ -2478,6 +2514,16 @@
   },
   {
     "type": "error",
+    "name": "NotListed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotPool",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ReentrancyGuardReentrantCall",
     "inputs": []
   },
@@ -2491,5 +2537,10 @@
         "internalType": "address"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "ZeroInput",
+    "inputs": []
   }
 ]

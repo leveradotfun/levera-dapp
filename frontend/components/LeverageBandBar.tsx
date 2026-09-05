@@ -55,7 +55,7 @@ export default function LeverageBandBar({ launchAddress }: { launchAddress: stri
           </div>
           <p className="text-[11px] leading-relaxed text-muted">
             This coin was launched without 2x. It trades as a normal market after the curve and
-            never pulls LYC senior. Leverage is a creation-time choice and cannot be flipped later.
+            never pulls vLYC capital. Leverage is a creation-time choice and cannot be flipped later.
           </p>
         </div>
       );
@@ -71,8 +71,8 @@ export default function LeverageBandBar({ launchAddress }: { launchAddress: stri
           <span className="text-xs font-semibold tracking-wide text-blue-400">{STATUS_LABEL.unpaired}</span>
         </div>
         <p className="text-[11px] leading-relaxed text-muted">
-          2x is on, but LYC senior is not attached yet. Pairing takes whatever idle exists, up
-          to a full 2x ({usd(band.juniorUsd)} junior vs {usd(band.idleUsdg)} idle).
+          2x is on, but vLYC is not attached yet. Pairing takes whatever idle exists, up
+          to a full 2x ({usd(band.juniorUsd)} xTOKEN side vs {usd(band.idleUsdg)} idle).
         </p>
         {!wallet.isConnected ? (
           <ConnectWalletButton label="Connect to pair" />
@@ -142,13 +142,13 @@ export default function LeverageBandBar({ launchAddress }: { launchAddress: stri
       </div>
 
       <p className="mt-2 text-[11px] leading-relaxed text-muted">
-        Senior attached {usd(band.seniorUsd)} of {usd(band.juniorUsd)} (2x). This meme has paid{" "}
+        vLYC attached {usd(band.seniorUsd)} of {usd(band.juniorUsd)} (2x). This meme has paid{" "}
         {usd(band.occupancyPaidUsd)} occupancy rent and {usd(band.pairingFeesPaidUsd)} pairing
         fees to LYC.
         {band.status === "in-band"
           ? " At target. Quiet coins can be peeled into louder ones when LYC is scarce."
           : band.status === "below"
-            ? " Under 2x — idle cash, then quieter coins' senior, will bump it toward target."
+            ? " Under 2x — idle cash, then quieter coins' vLYC, will bump it toward target."
             : band.tripped
               ? " Outside the band — protect() (≥ 2.5x) sells vault collateral back into idle."
               : " Drifting from target, still inside the band."}

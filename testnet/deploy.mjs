@@ -219,6 +219,12 @@ async function main() {
   const quoteZap = await deploy("QuoteZap", [wethAddress]);
   const quoteZapAddress = await quoteZap.getAddress();
 
+  // XZap: one-transaction xTOKEN exits into any listed asset (quote, USDG, the other
+  // collateral, native ETH). Stateless periphery like QuoteZap -- reads the collateral venues
+  // off the Earn Pool registry, holds nothing between calls.
+  const xzap = await deploy("XZap", [earnAddress, wethAddress]);
+  const xzapAddress = await xzap.getAddress();
+
   // BOTH launchpads, not one. A launchpad is bound to one quote asset at construction, so two
   // quote assets means two factories — and whichever was left unauthorised reverted `factory
   // only` on every launch it tried to register. That exact bug is why this registry exists.
@@ -280,6 +286,7 @@ async function main() {
     oracleCbbtc: btcOracleAddress,
     pairFactory: pairFactoryAddress,
     quoteZap: quoteZapAddress,
+    xzap: xzapAddress,
     oracleLib: libraryAddresses.OracleLib,
     cbbtc: cbbtcAddress,
     cbbtcOracle: btcOracleAddress,
