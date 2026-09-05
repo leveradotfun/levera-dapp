@@ -90,6 +90,10 @@ export default function EarnPage() {
       await withTimeout(fn(), TX_TIMEOUT_LONG_MS, label);
       toastSuccess(ok, okDetail);
       await refresh();
+      // A mint/redeem also moved the wallet's own balances (deposit paid in ETH/WETH/USDG/cbBTC,
+      // a redeem pays out in the picked asset) -- refresh the card's Pay balances now instead of
+      // waiting out the wallet poll.
+      wallet.refresh();
     } catch (e) {
       toastError(e, `${label} failed.`);
     } finally {

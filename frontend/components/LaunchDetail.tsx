@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ethers } from "ethers";
 import { DeployedAddresses } from "@/lib/chain";
 import { useWallet } from "@/lib/wallet";
@@ -411,6 +411,11 @@ export default function LaunchDetail({
     }
   })();
 
+  const [quoteBalanceTick, setQuoteBalanceTick] = useState(0);
+  const fetchQuoteTokenBalance = useCallback(() => {
+    setQuoteBalanceTick((t) => t + 1);
+  }, []);
+
   useEffect(() => {
     if (!wallet.address || !quoteInfo || wrapsNative) {
       setQuoteTokenBalance(0n);
@@ -425,7 +430,7 @@ export default function LaunchDetail({
     return () => {
       live = false;
     };
-  }, [wallet.address, quoteInfo, wrapsNative, launch.quoteToken]);
+  }, [wallet.address, quoteInfo, wrapsNative, launch.quoteToken, quoteBalanceTick]);
 
   // Default slippage 1% for every swap — previously auto-bumped to 15% after graduation. Also
   // reset the per-pool picks: the receive token (a "WETH" picked on an ETH-quoted coin is
@@ -547,10 +552,16 @@ export default function LaunchDetail({
           }`,
         );
       }
+      // One swap moves every number the card shows: the coin balance, the wallet's ETH/quote
+      // float, the coin's price, and the trade log. Refresh all of them now rather than waiting
+      // for the next poll, so the card reflects the fill immediately.
       setAmount("");
       setQuote(null);
       onRefresh();
       fetchBalances();
+      fetchQuoteTokenBalance();
+      wallet.refresh();
+      refresh(); // re-scan the trade log -- the fill should appear in the trades table at once
     } catch (e) {
       // Toast, not an inline panel: the raw ethers revert dump is many lines long and rendering it
       // inside the card stretched the card itself.

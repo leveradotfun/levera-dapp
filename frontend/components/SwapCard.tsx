@@ -216,13 +216,13 @@ export default function SwapCard({
   return (
     <div className="rounded-xl border border-border bg-card p-4 space-y-4">
       {/* Mode toggle + fee */}
-      <div className="flex items-center gap-2">
-        <div className="flex flex-1 rounded-lg border border-border bg-surface p-1">
+      <div className="flex items-center justify-between gap-2">
+        <div className="inline-flex rounded-lg border border-border bg-surface p-1">
           {(["buy", "sell"] as const).map((m) => (
             <button
               key={m}
               onClick={() => onModeChange(m)}
-              className={`flex-1 rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
+              className={`rounded-md px-3 py-1.5 text-sm font-semibold transition-colors ${
                 mode === m ? "bg-surface-2 text-foreground" : "text-muted hover:text-foreground"
               }`}
             >
@@ -304,7 +304,7 @@ export default function SwapCard({
       </div>
 
       {/* Pay */}
-      <div className="relative rounded-2xl border border-border bg-surface p-4">
+      <div className="relative rounded-2xl bg-surface-2/60 p-4">
         <div className="flex items-center justify-between text-xs text-muted mb-1">
           <span>Pay</span>
           <div className="flex items-center gap-2">
@@ -330,12 +330,12 @@ export default function SwapCard({
       </div>
 
       {/* Swap direction -- flips buy <-> sell, same as the mode toggle */}
-      <div className="flex justify-center -my-6 relative z-10">
+      <div className="relative z-10 -my-5 flex justify-center">
         <button
           onClick={onFlip}
           aria-label="Swap direction"
           title="Swap direction"
-          className="w-9 h-9 rounded-xl bg-card border border-border flex items-center justify-center text-muted hover:text-accent hover:border-accent/40 transition-colors"
+          className="h-10 w-10 rounded-xl border border-border bg-card shadow-lg shadow-black/20 flex items-center justify-center text-muted hover:text-accent transition-colors"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
@@ -344,7 +344,7 @@ export default function SwapCard({
       </div>
 
       {/* Receive */}
-      <div className="rounded-2xl border border-border bg-surface p-4">
+      <div className="rounded-2xl bg-surface-2/60 p-4">
         <div className="flex items-center justify-between text-xs text-muted mb-1">
           <span>Receive</span>
         </div>
@@ -380,8 +380,11 @@ export default function SwapCard({
         </button>
       )}
 
+      {/* Rate / details panel */}
       {feeNote ? (
-        <p className="text-[11px] text-muted text-center">{feeNote}</p>
+        <div className="rounded-2xl bg-surface-2/60 p-4">
+          <p className="text-xs leading-relaxed text-secondary">{feeNote}</p>
+        </div>
       ) : null}
     </div>
   );
