@@ -416,6 +416,9 @@ async function doCreateLaunch(addresses: DeployedAddresses, params: CreateLaunch
     // just initialized inside the SAME call, so there is no other trade that can land between
     // init and this buy to move the price against them -- the 20% cap is what actually bounds
     // this, not a slippage floor.
+    // LAUNCH_FEE() is an async contract read — it must be awaited BEFORE building the call,
+    // or ethers tries to encode the Promise itself and fails "invalid BigNumberish value".
+    const launchFee: bigint = await factory.LAUNCH_FEE();
     const tx = await sendReplacing(
       address,
       (overrides) =>
@@ -427,7 +430,7 @@ async function doCreateLaunch(addresses: DeployedAddresses, params: CreateLaunch
           params.leverageEnabled !== false,
           buyIn,
           0n,
-          { ...overrides, value: factory.LAUNCH_FEE() },
+          { ...overrides, value: launchFee },
         ),
       8_000_000n,
     );

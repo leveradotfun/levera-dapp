@@ -65,7 +65,7 @@ function faucetWallet(provider: ethers.JsonRpcProvider): ethers.Wallet {
 
 const ASSETS: Record<Asset, { label: string; decimals: number; daily: string; amount: bigint; tokenOf: (dep: Record<string, string>) => string | undefined }> = {
   cbbtc: { label: "cbBTC", decimals: 8, daily: "1", amount: ethers.parseUnits("1", 8), tokenOf: (d) => d.cbbtc },
-  weth: { label: "WETH", decimals: 18, daily: "10", amount: ethers.parseUnits("10", 18), tokenOf: (d) => d.weth },
+  weth: { label: "WETH", decimals: 18, daily: "50", amount: ethers.parseUnits("50", 18), tokenOf: (d) => d.weth },
   usdg: { label: "USDG", decimals: 18, daily: "100,000", amount: ethers.parseUnits("100000", 18), tokenOf: (d) => d.usdg },
   eth: { label: "ETH", decimals: 18, daily: "0.001", amount: ethers.parseEther("0.001"), tokenOf: () => undefined },
 };

@@ -177,10 +177,18 @@ export default function LiveLaunchTable({
   }, [launches, sortKey, sortDir]);
 
   if (launches.length === 0) {
+    // Same copy as the grid's empty state (LiveLaunchGrid) so both view modes read identically.
     return (
-      <div className="rounded-xl border border-dashed border-border p-10 text-center">
-        <p className="text-sm text-secondary">No coins launched yet.</p>
-        <p className="mt-1 text-xs text-muted">Hit &ldquo;Launch a coin&rdquo; to create the first one.</p>
+      <div className="rounded-xl border border-dashed border-border p-12 text-center">
+        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/10 text-2xl">🚀</div>
+        <p className="text-sm font-medium text-foreground">No coins here yet.</p>
+        <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted">
+          Launch the first one, or grab test tokens from the faucet to trade the ones that exist.
+        </p>
+        <div className="mt-4 flex items-center justify-center gap-2">
+          <a href="/create" className="rounded-lg bg-accent px-3.5 py-2 text-xs font-semibold text-accent-ink hover:opacity-90">Launch a coin</a>
+          <a href="/faucet" className="rounded-lg border border-border px-3.5 py-2 text-xs font-medium text-muted hover:text-foreground hover:border-accent/40">Faucet</a>
+        </div>
       </div>
     );
   }
