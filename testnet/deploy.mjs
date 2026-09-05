@@ -271,9 +271,12 @@ async function main() {
   }
 
   log("\nMinting starter balances to the deployer (mock tokens — this is a prototype)...");
-  await sendTx("mint USDG", () => usdg.mint(deployerAddress, 50_000n * WAD));
-  await sendTx("mint WETH", () => weth.mint(deployerAddress, 100n * WAD));
-  await sendTx("mint cbBTC", () => cbbtc.mint(deployerAddress, ethers.parseUnits("10", 8)));
+  // 1 BILLION of each, so the deployer can never be stranded: every bot top-up, faucet
+  // backstop and seed comes out of this pile, and the mocks are mintable anyway -- these are
+  // placeholders with testnet value only.
+  await sendTx("mint USDG", () => usdg.mint(deployerAddress, 1_000_000_000n * WAD));
+  await sendTx("mint WETH", () => weth.mint(deployerAddress, 1_000_000_000n * WAD));
+  await sendTx("mint cbBTC", () => cbbtc.mint(deployerAddress, ethers.parseUnits("1000000000", 8)));
 
   const addresses = {
     network: "robinhood-testnet",
