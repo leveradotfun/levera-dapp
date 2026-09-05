@@ -292,6 +292,15 @@ export default function EarnPage() {
           />
           <div className="w-px bg-border" />
           <StatBlock label="Market Cap" value={marketCap >= 1e9 ? `$${(marketCap / 1e9).toFixed(2)}B` : marketCap >= 1e6 ? `$${(marketCap / 1e6).toFixed(2)}M` : `$${marketCap.toFixed(2)}`} />
+          <div className="w-px bg-border" />
+          {/* The lend side of the book: vLYC cash currently rented out to xTOKEN pools. Settled
+              occupancy only -- pending rent is accrued but not yet on-chain, so it shows the
+              utilization badge against the whole book rather than a second number. */}
+          <StatBlock
+            label="Borrowed"
+            value={usd(g?.occupancyUsd ?? 0n)}
+            badge={g ? `${(Number(g.utilization) / 1e16).toFixed(0)}% of book` : undefined}
+          />
         </div>
 
         {/* Chart period selector */}
