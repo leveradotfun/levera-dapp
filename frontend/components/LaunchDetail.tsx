@@ -579,6 +579,7 @@ export default function LaunchDetail({
       <SwapCard
         mode={side}
         onModeChange={changeSide}
+        onFlip={() => changeSide(side === "buy" ? "sell" : "buy")}
         buyLabel="Buy" sellLabel="Sell"
         inputToken={{
           symbol: side === "buy" ? paySymbol : launch.symbol,

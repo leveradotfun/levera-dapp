@@ -88,6 +88,10 @@ export default function AnalyticsPage() {
 
   const totalFees = data.protocolFeesUsd + data.creatorFeesUsd;
   const totalLycFees = data.lycMintFeesUsd + data.lycRedeemFeesUsd;
+  // LYC mint/redeem fees mint straight to the treasury -- they ARE protocol fees, so they are
+  // baked into the protocol figure instead of tracked as a separate stream.
+  const protocolFees = data.protocolFeesUsd + totalLycFees;
+  const allFees = protocolFees + data.creatorFeesUsd;
 
   return (
     <div className="space-y-6">
@@ -342,8 +346,8 @@ export default function AnalyticsPage() {
           <Stat label="Total trading fees" value={compactUsd(totalFees)} sub={totalFees > 0 && data.totalVolumeUsd > 0 ? `1.00% per trade — reads ${(totalFees / data.totalVolumeUsd * 100).toFixed(2)}% of volume` : "1.00% per trade"} accent />
           <Stat
             label="Protocol fees"
-            value={compactUsd(data.protocolFeesUsd)}
-            sub="to the treasury"
+            value={compactUsd(protocolFees)}
+            sub="to the treasury — incl. LYC deposit/exit fees"
           />
           <Stat
             label="Creator fees"
@@ -354,41 +358,21 @@ export default function AnalyticsPage() {
           </>
           )}
         </div>
-        {totalFees > 0 ? (
+        {allFees > 0 ? (
           <div className="rounded-xl border border-border bg-card p-4">
             <div className="mb-2 flex justify-between text-xs text-secondary">
-              <span>Protocol {((data.protocolFeesUsd / totalFees) * 100).toFixed(1)}%</span>
-              <span>Creators {((data.creatorFeesUsd / totalFees) * 100).toFixed(1)}%</span>
+              <span>Protocol {((protocolFees / allFees) * 100).toFixed(1)}%</span>
+              <span>Creators {((data.creatorFeesUsd / allFees) * 100).toFixed(1)}%</span>
             </div>
             <div className="flex h-2 w-full overflow-hidden rounded-full bg-surface">
-              <div className="h-full bg-accent" style={{ width: `${(data.protocolFeesUsd / totalFees) * 100}%` }} />
-              <div className="h-full bg-green" style={{ width: `${(data.creatorFeesUsd / totalFees) * 100}%` }} />
+              <div className="h-full bg-accent" style={{ width: `${(protocolFees / allFees) * 100}%` }} />
+              <div className="h-full bg-green" style={{ width: `${(data.creatorFeesUsd / allFees) * 100}%` }} />
             </div>
             <p className="mt-2 text-xs text-secondary">
               Excludes the up-to-5% LYC slice — that lands as LYC yield, not here.
             </p>
           </div>
         ) : null}
-      </section>
-
-      {/* LYC mint/redeem fees */}
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-secondary">LYC fees</h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {!loaded ? (
-            <>
-              <SkeletonStat />
-              <SkeletonStat />
-              <SkeletonStat />
-            </>
-          ) : (
-          <>
-          <Stat label="Total LYC fees" value={compactUsd(totalLycFees)} sub="lifetime, to the treasury" accent />
-          <Stat label="Mint fees" value={compactUsd(data.lycMintFeesUsd)} sub="0.10% of every LYC deposit" />
-          <Stat label="Redeem fees" value={compactUsd(data.lycRedeemFeesUsd)} sub="0.25% of every covered exit" />
-          </>
-          )}
-        </div>
       </section>
 
       {/* coins + top pnl */}
@@ -605,17 +589,18 @@ function Stat({
   tag?: string;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
+    <div className="relative rounded-xl border border-border bg-card p-4">
+      {/* Tag rides the top-right corner so a long value never pushes it around */}
+      {tag ? (
+        <div className="absolute right-3 top-3 inline-block rounded-full bg-surface px-2 py-0.5 text-[10px] font-medium text-green">
+          {tag}
+        </div>
+      ) : null}
       <div className="text-xs text-secondary">{label}</div>
       <div className={`mt-1 font-mono text-3xl font-semibold ${accent ? "text-accent" : "text-foreground"}`}>
         {value}
       </div>
       {sub ? <div className="mt-0.5 text-xs text-muted">{sub}</div> : null}
-      {tag ? (
-        <div className="mt-1.5 inline-block rounded-full bg-surface px-2 py-0.5 text-[10px] font-medium text-green">
-          {tag}
-        </div>
-      ) : null}
     </div>
   );
 }

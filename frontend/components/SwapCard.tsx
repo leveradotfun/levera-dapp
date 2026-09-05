@@ -96,6 +96,8 @@ export type SwapCardProps = {
   onBuy: () => void;
   onSell: () => void;
   onMax?: () => void;
+  /** Flips the trade direction (buy <-> sell). The arrow button between the rows fires it. */
+  onFlip?: () => void;
 };
 
 /// The token pill on a Pay/Receive row. Plain badge when there's nothing to pick; a dropdown
@@ -191,6 +193,7 @@ export default function SwapCard({
   onBuy,
   onSell,
   onMax,
+  onFlip,
   inputUsdLabel,
   outputUsdLabel,
 }: SwapCardProps) {
@@ -326,9 +329,14 @@ export default function SwapCard({
         {inputUsdLabel ? <div className="mt-1 text-xs text-muted">{inputUsdLabel}</div> : null}
       </div>
 
-      {/* Swap direction */}
+      {/* Swap direction -- flips buy <-> sell, same as the mode toggle */}
       <div className="flex justify-center -my-6 relative z-10">
-        <button className="w-9 h-9 rounded-xl bg-card border border-border flex items-center justify-center text-muted hover:text-foreground transition-colors">
+        <button
+          onClick={onFlip}
+          aria-label="Swap direction"
+          title="Swap direction"
+          className="w-9 h-9 rounded-xl bg-card border border-border flex items-center justify-center text-muted hover:text-accent hover:border-accent/40 transition-colors"
+        >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
           </svg>

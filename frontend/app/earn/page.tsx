@@ -194,6 +194,7 @@ export default function EarnPage() {
           <SwapCard
             mode={swapMode}
             onModeChange={(m) => { setSwapMode(m); setDepositAmt(""); setRedeemAmt(""); }}
+            onFlip={() => { const next = swapMode === "buy" ? "sell" : "buy"; setSwapMode(next); setDepositAmt(""); setRedeemAmt(""); }}
             buyLabel="Buy vLYC" sellLabel="Sell vLYC"
             inputToken={{ symbol: swapMode === "buy" ? paySymbol : "vLYC", balance: swapMode === "buy" ? payBalance : (pos?.balance ?? 0n), decimals: swapMode === "buy" && payWith === "CBBTC" ? 8 : 18 }}
             outputToken={{ symbol: swapMode === "buy" ? "vLYC" : redeemAs === "CBBTC" ? "cbBTC" : redeemAs, balance: 0n }}
