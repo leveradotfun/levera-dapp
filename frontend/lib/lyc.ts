@@ -282,7 +282,10 @@ export async function mintWithCollateral(
           address,
           (o) =>
             h
-              .getFunction("mintWithCollateralPermit(address,address,uint256,address,uint256,uint8,bytes32,bytes32)")(
+              // Signature MUST match the contract's parameter list exactly — (token, amount,
+              // pairPool, deadline, v, r, s). An extra address here resolved against nothing and
+              // ethers threw "no matching function" before the tx was ever built.
+              .getFunction("mintWithCollateralPermit(address,uint256,address,uint256,uint8,bytes32,bytes32)")(
                 token, amount, ethers.ZeroAddress, deadline, v, r, s, o,
               ),
           2_500_000n,
@@ -294,13 +297,19 @@ export async function mintWithCollateral(
     }
 
     // Fallback path: token has no EIP-2612 — approve (max, the standing-allowance tradeoff the
-    // permit path avoids) then the ordinary mint. Pin the explicit overload: the full EarnPool
-    // ABI carries BOTH mintWithCollateral shapes — (address,uint256) and
-    // (address,uint256,address pairPool) — and ethers v6's resolver throws "ambiguous function
-    // description" when an overrides object rides along with an overloaded call unless the
-    // signature is spelled out. The earn page means a PLAIN deposit (no eager-pair pool), which
-    // is the 2-arg shape: on-chain that passes pairPool = address(0), and the contract skips the
-    // eager-pair path on its own.
+    // permit path avoids) then the ordinary mint. The approve is not optional here: the mint
+    // pulls the collateral with safeTransferFrom, and without it the tx just reverts on-chain
+    // (this is what made cbBTC mints fail after a fresh faucet claim). Pin the explicit
+    // overload: the full EarnPool ABI carries BOTH mintWithCollateral shapes —
+    // (address,uint256) and (address,uint256,address pairPool) — and ethers v6's resolver throws
+    // "ambiguous function description" when an overrides object rides along with an overloaded
+    // call unless the signature is spelled out. The earn page means a PLAIN deposit (no
+    // eager-pair pool), which is the 2-arg shape: on-chain that passes pairPool = address(0),
+    // and the contract skips the eager-pair path on its own.
+    if (allowance < amount) {
+      const approve = await (await q.approve(addresses.lyc, ethers.MaxUint256, await walletTxOverrides(address, 200_000n))).wait();
+      void approve;
+    }
     const receipt = await (
       await sendReplacing(
         address,
