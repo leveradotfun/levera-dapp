@@ -5,7 +5,7 @@ function norm(addr: string): string {
   return addr.toLowerCase();
 }
 
-export type NavSample = {
+export type LycNavSample = {
   t: number;
   nav: number;
   occ: number;
@@ -54,28 +54,31 @@ export type XProfile = {
   updatedAt: number;
 };
 
-const NAV_RETAIN_MS = 8 * 24 * 60 * 60 * 1000;
+const LYC_NAV_RETAIN_MS = 8 * 24 * 60 * 60 * 1000;
 const PRICE_MAX = 4000;
 const REBALANCE_MAX = 200;
 
-export async function upsertNavSample(factory: string, sample: NavSample): Promise<void> {
+/// One NAV bucket per factory per 5 minutes; both apps write the same shape. Old buckets fall off
+/// behind the write so the 8-day window the APY math assumes is enforced at the store, not left
+/// to whichever client happens to be open.
+export async function upsertLycNavSample(factory: string, sample: LycNavSample): Promise<void> {
   await ensureSchema();
   const f = norm(factory);
   await query(
-    `INSERT INTO hfyc_nav (factory, t, nav, occ, cash, liab, util, pending)
+    `INSERT INTO lyc_nav (factory, t, nav, occ, cash, liab, util, pending)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
      ON CONFLICT (factory, t) DO UPDATE SET
        nav = EXCLUDED.nav, occ = EXCLUDED.occ, cash = EXCLUDED.cash,
        liab = EXCLUDED.liab, util = EXCLUDED.util, pending = EXCLUDED.pending`,
     [f, sample.t, sample.nav, sample.occ, sample.cash, sample.liab, sample.util, sample.pending],
   );
-  await query(`DELETE FROM hfyc_nav WHERE factory = $1 AND t < $2`, [f, sample.t - NAV_RETAIN_MS]);
+  await query(`DELETE FROM lyc_nav WHERE factory = $1 AND t < $2`, [f, sample.t - LYC_NAV_RETAIN_MS]);
 }
 
-export async function listNavSamples(factory: string): Promise<NavSample[]> {
+export async function listLycNavSamples(factory: string): Promise<LycNavSample[]> {
   await ensureSchema();
-  const rows = await query<NavSample>(
-    `SELECT t, nav, occ, cash, liab, util, pending FROM hfyc_nav WHERE factory = $1 ORDER BY t ASC`,
+  const rows = await query<LycNavSample>(
+    `SELECT t, nav, occ, cash, liab, util, pending FROM lyc_nav WHERE factory = $1 ORDER BY t ASC`,
     [norm(factory)],
   );
   return rows.map((r) => ({
@@ -311,79 +314,17 @@ export async function deleteXProfile(address: string): Promise<void> {
 export async function wipeFactory(factory: string): Promise<void> {
   await ensureSchema();
   const f = norm(factory);
-  await query(`DELETE FROM hfyc_nav WHERE factory = $1`, [f]);
+  await query(`DELETE FROM lyc_nav WHERE factory = $1`, [f]);
   await query(`DELETE FROM price_points WHERE factory = $1`, [f]);
   await query(`DELETE FROM ledger_totals WHERE factory = $1`, [f]);
   await query(`DELETE FROM trades WHERE factory = $1`, [f]);
   await query(`DELETE FROM rebalances WHERE factory = $1`, [f]);
-  await query(`DELETE FROM collateral_samples WHERE factory = $1`, [f]);
 }
 
 /// Clean slate. Every table of session data, identity counters reset, schema ensured first so
 /// this also works on a database that has never been migrated.
 export async function wipeAllSessionData(): Promise<void> {
   await wipeDatabase();
-}
-
-export type CollateralSample = {
-  token: string;
-  symbol: string;
-  priceUsd: number | null;
-  oracleLive: boolean;
-  pooled: number;
-  idle: number;
-  seniorUsd: number;
-  collateralCr: number | null;
-  headroomUsd: number;
-  capBps: number;
-  routingApr: number;
-  fundingApr: number;
-  enabled: boolean;
-};
-
-/// One row per listed collateral per sample. Aggregates stop meaning anything the moment the book
-/// holds two assets, so nothing here is summed on the way in.
-export async function insertCollateralSamples(
-  factory: string,
-  t: number,
-  samples: CollateralSample[],
-): Promise<void> {
-  if (samples.length === 0) return;
-  await ensureSchema();
-  const f = norm(factory);
-  const client = await getPool().connect();
-  try {
-    await client.query("BEGIN");
-    for (const s of samples) {
-      await client.query(
-        `INSERT INTO collateral_samples
-           (factory, token, t, symbol, price_usd, oracle_live, pooled, idle, senior_usd,
-            collateral_cr, headroom_usd, cap_bps, routing_apr, funding_apr, enabled)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
-         ON CONFLICT (factory, token, t) DO NOTHING`,
-        [
-          f, norm(s.token), t, s.symbol, s.priceUsd, s.oracleLive, s.pooled, s.idle, s.seniorUsd,
-          s.collateralCr, s.headroomUsd, s.capBps, s.routingApr, s.fundingApr, s.enabled,
-        ],
-      );
-    }
-    await client.query("COMMIT");
-  } catch (e) {
-    await client.query("ROLLBACK");
-    throw e;
-  } finally {
-    client.release();
-  }
-}
-
-export async function listCollateralSamples(factory: string, token?: string) {
-  const params: unknown[] = [norm(factory)];
-  let where = "factory = $1";
-  if (token) {
-    params.push(norm(token));
-    where += " AND token = $2";
-  }
-  return query(`SELECT * FROM collateral_samples WHERE ${where} ORDER BY t ASC`, params);
 }
 
 // ---- faucet: one claim per address per asset per UTC day -----------------------------------
@@ -417,29 +358,31 @@ export async function recordFaucetClaim(claim: FaucetClaim): Promise<void> {
   );
 }
 
-// ---- arweave: content-addressed blobs (image storage) --------------------------------
+// ---- content blobs: the image store behind the /api/ipfs gateway ----------------------------
+// Content-addressed (`ipfs-<cid>` for pinned uploads, `ipfs-<sha256>` for local fallbacks), so
+// repeat uploads dedupe on the primary key and serving is cache-forever safe.
 
-export async function saveArweaveBlob(id: string, data: Buffer, contentType: string): Promise<void> {
+export async function saveContentBlob(id: string, data: Buffer, contentType: string): Promise<void> {
   await ensureSchema();
   await query(
-    `INSERT INTO arweave_blobs (id, data, content_type, created_at)
+    `INSERT INTO content_blobs (id, data, content_type, created_at)
       VALUES ($1, $2, $3, $4)
       ON CONFLICT (id) DO NOTHING`,
     [id, data, contentType, Date.now()],
   );
 }
 
-export async function getArweaveBlob(id: string): Promise<{ data: Buffer; contentType: string } | null> {
+export async function getContentBlob(id: string): Promise<{ data: Buffer; contentType: string } | null> {
   await ensureSchema();
   const rows = await query<{ data: Buffer; content_type: string }>(
-    `SELECT data, content_type FROM arweave_blobs WHERE id = $1`,
+    `SELECT data, content_type FROM content_blobs WHERE id = $1`,
     [id],
   );
   if (rows.length === 0) return null;
   return { data: rows[0].data as Buffer, contentType: rows[0].content_type };
 }
 
-// ---- token metadata (image via arweave + social links) ---------------------------------
+// ---- token metadata (image + social links, creator-signed) ---------------------------------
 
 export type TokenMetadata = {
   launch: string;

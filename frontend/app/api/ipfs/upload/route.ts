@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createHash } from "crypto";
-import { saveArweaveBlob } from "@/db/store";
+import { saveContentBlob } from "@/db/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -85,7 +85,7 @@ export async function POST(req: Request) {
         const cid = await pinToPinata(buffer, contentType, file.name);
         // Cache locally too: the gateway route serves repeat renders from Postgres instead of
         // hammering the public gateway on every page view.
-        await saveArweaveBlob(`ipfs-${cid}`, buffer, contentType).catch(() => {});
+        await saveContentBlob(`ipfs-${cid}`, buffer, contentType).catch(() => {});
         return NextResponse.json({
           cid,
           provider: "pinata",
@@ -99,7 +99,7 @@ export async function POST(req: Request) {
         // Pinata outage/quotas must not block a coin launch — fall through to the local store,
         // with the reason surfaced so the operator knows pinning did not happen.
         const reason = e instanceof Error ? e.message : String(e);
-        await saveArweaveBlob(`ipfs-${fallbackId}`, buffer, contentType);
+        await saveContentBlob(`ipfs-${fallbackId}`, buffer, contentType);
         return NextResponse.json({
           cid: fallbackId,
           provider: "local",
@@ -113,7 +113,7 @@ export async function POST(req: Request) {
       }
     }
 
-    await saveArweaveBlob(`ipfs-${fallbackId}`, buffer, contentType);
+    await saveContentBlob(`ipfs-${fallbackId}`, buffer, contentType);
     return NextResponse.json({
       cid: fallbackId,
       provider: "local",

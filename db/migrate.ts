@@ -29,7 +29,7 @@ export function ensureSchema(): Promise<void> {
       // check first and only pay for the DDL block on a genuinely fresh database -- normally
       // never in production, since the schema is expected to already be applied once by hand
       // (Supabase SQL Editor, a direct connection) rather than raced by concurrent cold starts.
-      const rows = await query<{ exists: string | null }>(`SELECT to_regclass('public.hfyc_nav') AS exists`);
+      const rows = await query<{ exists: string | null }>(`SELECT to_regclass('public.price_points') AS exists`);
       if (rows[0]?.exists) return;
       await runDdlSerialized();
     })().catch((e) => {
@@ -56,7 +56,7 @@ async function runDdlSerialized(): Promise<void> {
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended('levera-schema-v1', 0))");
     // Re-check: whoever held the lock before us may have just finished applying it.
-    const rows = await client.query<{ exists: string | null }>(`SELECT to_regclass('public.hfyc_nav') AS exists`);
+    const rows = await client.query<{ exists: string | null }>(`SELECT to_regclass('public.price_points') AS exists`);
     if (!rows.rows[0]?.exists) {
       await client.query(SCHEMA_SQL);
     }
@@ -75,12 +75,11 @@ async function runDdlSerialized(): Promise<void> {
 /// wallet to the X account that claimed it, and wiping it on every redeploy would make people
 /// reconnect their identity because somebody restarted a fork.
 export const SESSION_TABLES = [
-  "hfyc_nav",
+  "lyc_nav",
   "price_points",
   "ledger_totals",
   "trades",
   "rebalances",
-  "collateral_samples",
 ] as const;
 
 /// Drop every row of session data and reset identity counters.

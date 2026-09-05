@@ -5,6 +5,7 @@
   "type": "module",
   "main": "index.ts",
   "dependencies": {
+    "ethers": "^6.17.0",
     "pg": "^8.16.3"
   },
   "devDependencies": {
@@ -13,7 +14,7 @@
   },
   "scripts": {
     "migrate": "tsx -e \"import('./migrate.ts').then(m=>m.ensureSchema()).then(()=>console.log('schema ok'))\"",
-    "wipe": "tsx -e \"import('./migrate.ts').then(m=>m.wipeDatabase()).then(()=>console.log('database wiped \u2014 clean slate'))\"",
+    "wipe": "tsx -e \"import('./migrate.ts').then(m=>m.wipeDatabase()).then(()=>console.log('database wiped — clean slate'))\"",
     "counts": "tsx -e \"import('./migrate.ts').then(m=>m.tableCounts()).then(c=>console.log(c))\"",
     "smoke": "tsx smoke.ts"
   }

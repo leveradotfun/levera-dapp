@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getArweaveBlob, saveArweaveBlob } from "@/db/store";
+import { getContentBlob, saveContentBlob } from "@/db/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 //     Postgres, so repeat renders never depend on a public gateway being up or fast;
 //   - `ipfs-<sha256>` fallback ids written by the upload route when Pinata is unconfigured —
 //     served straight from Postgres.
-// The arweave_blobs table is the generic content-blob store behind both gateways.
+// The content_blobs table is the generic content-blob store behind the gateway.
 
 const IPFS_CID_RE = /^(Qm[1-9A-HJ-NP-Za-km-z]{44}|baf[a-z0-9]{4,58})$/;
 const FALLBACK_ID_RE = /^ipfs-[a-f0-9]{64}$/;
@@ -30,7 +30,7 @@ export async function GET(
   }
 
   const storeKey = IPFS_CID_RE.test(cid) ? `ipfs-${cid}` : cid;
-  const cached = await getArweaveBlob(storeKey).catch(() => null);
+  const cached = await getContentBlob(storeKey).catch(() => null);
   if (cached) {
     return new NextResponse(cached.data as unknown as BodyInit, {
       headers: {
@@ -53,7 +53,7 @@ export async function GET(
       if (!contentType.startsWith("image/") && !contentType.startsWith("application/octet-stream")) {
         return NextResponse.json({ error: `Upstream returned ${contentType}, not an image` }, { status: 502 });
       }
-      await saveArweaveBlob(storeKey, buffer, contentType).catch(() => {});
+      await saveContentBlob(storeKey, buffer, contentType).catch(() => {});
       return new NextResponse(buffer as unknown as BodyInit, {
         headers: {
           "Content-Type": contentType,

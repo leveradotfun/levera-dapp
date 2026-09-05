@@ -10,16 +10,16 @@ import {
   listLedger,
   listLedgerByFactory,
   listFollows,
-  listNavSamples,
+  listLycNavSamples,
   listPricePoints,
   listRebalances,
   listXProfiles,
   removeFollow,
-  upsertNavSample,
+  upsertLycNavSample,
   upsertXProfile,
   wipeAllSessionData,
   wipeFactory,
-  type NavSample,
+  type LycNavSample,
   type PricePoint,
   type RebalanceEvent,
   type TradeInput,
@@ -50,21 +50,23 @@ function launchOf(url: URL): string {
   return (url.searchParams.get("launch") ?? "").trim();
 }
 
-export async function handleHfycNavGet(req: Request): Promise<Response> {
+/// LYC NAV history. Both apps POST here on the same 5-minute bucket grid; the console's bot runs
+/// feed the same series the public Earn page reads its 24h/7d APY from.
+export async function handleLycNavGet(req: Request): Promise<Response> {
   const factory = factoryOf(new URL(req.url));
   if (!factory) return json({ error: "factory required" }, 400);
-  const samples = await listNavSamples(factory);
+  const samples = await listLycNavSamples(factory);
   return json({ samples });
 }
 
-export async function handleHfycNavPost(req: Request): Promise<Response> {
-  const body = (await req.json()) as { factory?: string; sample?: NavSample; samples?: NavSample[] };
+export async function handleLycNavPost(req: Request): Promise<Response> {
+  const body = (await req.json()) as { factory?: string; sample?: LycNavSample; samples?: LycNavSample[] };
   const factory = body.factory?.trim();
   if (!factory) return json({ error: "factory required" }, 400);
   const samples = body.samples ?? (body.sample ? [body.sample] : []);
   for (const s of samples) {
-    if (!s || typeof s.t !== "number") continue;
-    await upsertNavSample(factory, s);
+    if (!s || typeof s.t !== "number" || typeof s.nav !== "number") continue;
+    await upsertLycNavSample(factory, s);
   }
   return json({ ok: true, n: samples.length });
 }

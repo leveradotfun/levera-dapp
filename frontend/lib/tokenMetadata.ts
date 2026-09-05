@@ -32,13 +32,6 @@ export function useTokenMetadata(launchAddress: string | null) {
   return meta;
 }
 
-export function formatArweaveUrl(url: string | null): string | null {
-  if (!url) return null;
-  // Our gateway is /api/arweave/<id>, but we also accept https://arweave.net/<id>
-  // For display we can use the URL as-is; the gateway will proxy.
-  return url;
-}
-
 /// Images for a whole set of launches, fetched in one batched call and keyed by lowercase
 /// launch address. Surfaces with many coins (Explore grid/table, profile positions) use this
 /// to render each coin's pinned artwork instead of the hash-emoji fallback.
