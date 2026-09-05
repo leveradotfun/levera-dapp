@@ -226,7 +226,12 @@ async function main() {
     const factory = new ethers.Contract(record.factory, FACTORY_ABI, provider);
     const implAddr = await factory.implementation();
     const impl = new ethers.Contract(implAddr, LAUNCH_ABI, provider);
-    check("implementation.initialized() is true", await impl.initialized(), implAddr);
+    // `initialized` is internal now (size cap) — probe the guard instead: a second initialize must revert.
+    let reinitReverted = false;
+    try {
+      await impl.initialize("x", "x", ethers.ZeroAddress, ethers.ZeroAddress, ethers.ZeroAddress, ethers.ZeroAddress, ethers.ZeroAddress, ethers.ZeroAddress, ethers.ZeroAddress, ethers.ZeroAddress, false, false, 1, 1);
+    } catch { reinitReverted = true; }
+    check("implementation rejects re-initialization", reinitReverted, implAddr);
     // The new-gate regression: registerPool rejects any implementation not on the owner-curated
     // trusted set, and a deployment that forgets setTrustedImplementation reverts every
     // createLaunch with "untrusted implementation" -- authorised factories notwithstanding.

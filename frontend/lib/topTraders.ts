@@ -125,6 +125,9 @@ export function useTopTraders(launches: LaunchSummary[], enabled: boolean, limit
               rem -= take;
               if (lot.tokens <= TOKEN_EPS) lots.shift();
             }
+            // Accepted edge (same as the profile FIFO): transfers in/out are invisible to this
+            // log, so a transferred-in token sells as pure profit and a transferred-out one
+            // leaves phantom cost basis in the remaining lots.
             if (rem > TOKEN_EPS) book.realized += p * rem; // sold tokens with no logged buy
           }
         }

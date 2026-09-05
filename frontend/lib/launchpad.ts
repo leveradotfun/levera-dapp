@@ -8,6 +8,7 @@ import { OracleSwapRouterAbi } from "./artifacts/OracleSwapRouter";
 import { MockWETHAbi } from "./artifacts/MockWETH";
 import { QuoteZapAbi } from "./artifacts/QuoteZap";
 import { ANVIL_ACCOUNTS, DEPLOYER, DeployedAddresses } from "./chain";
+import { signEip2612, tokenSupportsPermit } from "./lyc";
 import { getManagedSigner, getProvider, withSignerLock } from "./signers";
 import { readEthUsdWad } from "./oracle";
 import { assertWalletSeesApp, withActiveSigner } from "./activeSigner";
@@ -426,7 +427,7 @@ async function doCreateLaunch(addresses: DeployedAddresses, params: CreateLaunch
           params.leverageEnabled !== false,
           buyIn,
           0n,
-          overrides,
+          { ...overrides, value: factory.LAUNCH_FEE() },
         ),
       8_000_000n,
     );
@@ -663,25 +664,40 @@ export async function buy(
       const zap = new ethers.Contract(addresses.quoteZap!, QuoteZapAbi as ethers.InterfaceAbi, signer);
       tx = await zap.buyWithEth(launchAddress, minTokensOut, { ...overrides, value: spendQuote });
     } else {
-      if ((await quote.allowance(address, launchAddress)) < spendQuote) {
-        await (await quote.approve(launchAddress, ethers.MaxUint256)).wait();
-      }
-      if (!graduated) {
-        try {
-          tx = await launch.buy(spendQuote, minTokensOut, overrides);
-        } catch (e) {
-          // The coin can graduate in the gap between the `graduated` read above and this call
-          // landing -- someone else's buy filled the curve first. The quote asset is already in
-          // this wallet (pulled by the USDG zap above, or the caller's own WETH/cbBTC), so retry
-          // against the pool instead of leaving it stranded and the buyer with neither the coin
-          // nor their original asset.
-          const msg = `${(e as { reason?: string })?.reason ?? ""} ${(e as Error)?.message ?? ""}`;
-          if (!/curveclosed|already graduated/i.test(msg)) throw e;
-          tx = await launch.buyOnPool(spendQuote, minTokensOut, overrides);
-          usedPool = true;
-        }
+      // Permit path: when the quote token speaks EIP-2612 and the allowance is short, ONE
+      // typed-data signature authorizes this exact purchase inside the swap transaction — no
+      // approve tx, no standing max allowance. Approve+buy remains the fallback for tokens
+      // without permit support.
+      const allowance = await quote.allowance(address, launchAddress);
+      const canPermit =
+        allowance < spendQuote && (await tokenSupportsPermit(quoteAddress, await signer.provider!));
+      if (canPermit) {
+        const deadline = BigInt(Math.floor(Date.now() / 1000) + 1800);
+        const sig = await signEip2612(signer, quoteAddress, launchAddress, spendQuote, deadline);
+        const { v, r, s } = ethers.Signature.from(sig);
+        tx = await launch.buyWithPermit(spendQuote, minTokensOut, deadline, v, r, s, overrides);
+        usedPool = graduated;
       } else {
-        tx = await launch.buyOnPool(spendQuote, minTokensOut, overrides);
+        if (allowance < spendQuote) {
+          await (await quote.approve(launchAddress, ethers.MaxUint256)).wait();
+        }
+        if (!graduated) {
+          try {
+            tx = await launch.buy(spendQuote, minTokensOut, overrides);
+          } catch (e) {
+            // The coin can graduate in the gap between the `graduated` read above and this call
+            // landing -- someone else's buy filled the curve first. The quote asset is already in
+            // this wallet (pulled by the USDG zap above, or the caller's own WETH/cbBTC), so retry
+            // against the pool instead of leaving it stranded and the buyer with neither the coin
+            // nor their original asset.
+            const msg = `${(e as { reason?: string })?.reason ?? ""} ${(e as Error)?.message ?? ""}`;
+            if (!/curveclosed|already graduated/i.test(msg)) throw e;
+            tx = await launch.buyOnPool(spendQuote, minTokensOut, overrides);
+            usedPool = true;
+          }
+        } else {
+          tx = await launch.buyOnPool(spendQuote, minTokensOut, overrides);
+        }
       }
     }
     const receipt = await tx.wait();

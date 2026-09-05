@@ -11,6 +11,8 @@ import { spendableEth, useWallet } from "@/lib/wallet";
 import { useAppState } from "@/lib/appState";
 import ConnectWalletButton from "@/components/ConnectWalletButton";
 import { QuoteAsset, formatQuote, listQuoteAssets, parseQuote } from "@/lib/quoteAssets";
+import { normMetadataField, tokenMetadataMessage } from "@/lib/metadataSigning";
+import { withActiveSigner } from "@/lib/activeSigner";
 
 export default function CreatePage() {
   const router = useRouter();
@@ -115,12 +117,10 @@ export default function CreatePage() {
     ? Number(previewCreatorBuy(quote.targetRaise, 0n, quote.creatorBuyCapBps).capTokens / 10n ** 18n).toLocaleString()
     : null;
 
-  // Creating a coin itself never charges a protocol fee -- the only thing you actually spend is
-  // the optional first buy (at the same curve price and 1.00% fee any other buyer pays), plus gas.
-  const willPayLabel =
-    buyInWad > 0n && quote
-      ? `${formatQuote(buyInWad, quote.decimals, Math.min(quote.decimals, 6))} ${quoteName} + gas`
-      : "Just gas — creation itself is free";
+  // The 0.0005 ETH launch fee (LaunchpadFactory.LAUNCH_FEE) goes to the protocol fee recipient;
+  // the only other spend is the optional first buy (at the same curve price and 1.00% fee any
+  // other buyer pays), plus gas.
+  const willPayLabel = "0.0005 ETH launch fee" + (buyInWad > 0n && quote ? " + optional first buy" : "") + " + gas";
 
   async function submit() {
     if (!addresses) {
@@ -159,23 +159,50 @@ export default function CreatePage() {
         TX_TIMEOUT_LONG_MS,
         "Creating coin",
       );
-      // Persist off-chain metadata (Arweave image + description + socials) for display
+      // Persist off-chain metadata (IPFS-pinned image + description + socials) for display. The
+      // coin already exists at this point, so a failure must not fail the launch — but a silent
+      // drop here used to leave the coin permanently imageless with no signal: the POST response
+      // was never checked. Retry, and tell the user when it still did not land.
+      //
+      // The write is creator-signed: the API verifies the signature against the launch's on-chain
+      // creator before storing, so only this wallet can attach (or later revise) the coin's
+      // public image and text.
       if (imageUrl || description.trim() || website.trim() || telegram.trim() || discord.trim()) {
-        try {
-          await fetch("/api/token-metadata", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              launch: launchAddress,
-              imageUrl: imageUrl || null,
-              description: description.trim() || null,
-              website: website.trim() || null,
-              telegram: telegram.trim() || null,
-              discord: discord.trim() || null,
-            }),
-          });
-        } catch {
-          // metadata is best-effort — coin already exists
+        const meta = {
+          imageUrl: normMetadataField(imageUrl),
+          description: normMetadataField(description),
+          website: normMetadataField(website),
+          telegram: normMetadataField(telegram),
+          discord: normMetadataField(discord),
+          twitter: null,
+        };
+        const payload = JSON.stringify({
+          launch: launchAddress,
+          ...meta,
+          signature: await withActiveSigner(async ({ signer }) =>
+            signer.signMessage(tokenMetadataMessage(launchAddress, meta)),
+          ),
+        });
+        let saved = false;
+        let lastStatus = 0;
+        for (let attempt = 0; attempt < 3 && !saved; attempt++) {
+          if (attempt > 0) await new Promise((r) => setTimeout(r, 1500 * attempt));
+          try {
+            const res = await fetch("/api/token-metadata", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: payload,
+            });
+            lastStatus = res.status;
+            saved = res.ok;
+          } catch {
+            // network hiccup — retry
+          }
+        }
+        if (!saved) {
+          setError(
+            `Coin created — but its image/description could not be saved (last try returned ${lastStatus || "a network error"}). You can retry the launch details later.`,
+          );
         }
       }
       refreshLaunches();

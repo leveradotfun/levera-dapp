@@ -214,25 +214,25 @@ export default function LiveLaunchTable({
     // table-fixed + an explicit colgroup: with auto layout, every cell's content re-measures the
     // columns on every poll — "$5.29K" becoming "$1.23M" or an ATH bar growing reshuffles all
     // the columns, so the green ATH bars and sparklines never line up between rows. Fixed widths
-    // pin every column; long values truncate instead of pushing the row around. The spare width
-    // spreads proportionally across all columns — COIN is capped so the name column doesn't
-    // swallow it all.
+    // pin every column; long values truncate instead of pushing the row around. COIN is the only
+    // width-less column, so it swallows the spare width — every other column carries a generous
+    // fixed width of its own so the numbers never look cramped next to a wide name column.
     <div className="overflow-x-auto rounded-xl border border-border">
       <table className="w-full min-w-[1200px] table-fixed text-sm">
         <colgroup>
           <col className="w-12" />
-          <col className="w-56" />
-          <col className="w-14" />
+          <col />
+          <col className="w-16" />
+          <col className="w-28" />
+          <col className="w-32" />
+          <col className="w-32" />
+          <col className="w-16" />
+          <col className="w-16" />
           <col className="w-24" />
-          <col className="w-28" />
-          <col className="w-28" />
-          <col className="w-14" />
-          <col className="w-14" />
+          <col className="w-16" />
           <col className="w-20" />
-          <col className="w-14" />
-          <col className="w-16" />
-          <col className="w-16" />
-          <col className="w-16" />
+          <col className="w-20" />
+          <col className="w-20" />
         </colgroup>
         <thead className="bg-surface/50">
           <tr className="border-b border-border">

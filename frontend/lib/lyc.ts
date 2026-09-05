@@ -3,6 +3,7 @@ import { DeployedAddresses } from "./chain";
 import { allFactories, fetchCollateralPriceUsd, fetchLaunchAddresses, getLyc, getLaunch, protectLaunch, WAD } from "./launchpad";
 import { assertWalletSeesApp, getProvider, withActiveSigner } from "./activeSigner";
 import { sendReplacing, walletTxOverrides } from "./txFees";
+import { readEthUsdWad } from "./oracle";
 import { EarnPoolAbi } from "./artifacts/EarnPool";
 import { OracleSwapRouterAbi } from "./artifacts/OracleSwapRouter";
 import { MockWETHAbi } from "./artifacts/MockWETH";
@@ -261,22 +262,45 @@ export async function mintWithCollateral(
 ) {
   await assertWalletSeesApp(addresses.factory);
   return withActiveSigner(async ({ signer, address }) => {
+    const h = getLyc(addresses.lyc, signer);
     const q = new ethers.Contract(token, ERC20_ABI, signer);
     const allowance: bigint = await q.allowance(address, addresses.lyc);
-    if (allowance < amount) {
-      await (await q.approve(addresses.lyc, ethers.MaxUint256, await walletTxOverrides(address, 200_000n))).wait();
-    }
-    const h = getLyc(addresses.lyc, signer);
+    const usdValue = (amount * 10n ** BigInt(18 - decimals) * tokenUsdPriceWad) / WAD;
     const g = await fetchLycGlobal(addresses);
-    const decimalLift = 10n ** BigInt(18 - decimals);
-    const usdValue = (amount * decimalLift * tokenUsdPriceWad) / WAD;
     const sharesMinted = quoteMint(g, usdValue);
-    // Pin the explicit overload: the full EarnPool ABI carries BOTH mintWithCollateral shapes
-    // — (address,uint256) and (address,uint256,address pairPool) — and ethers v6's resolver
-    // throws "ambiguous function description" when an overrides object rides along with an
-    // overloaded call unless the signature is spelled out. The earn page means a PLAIN deposit
-    // (no eager-pair pool), which is the 2-arg shape: on-chain that passes pairPool = address(0),
-    // and the contract skips the eager-pair path on its own.
+
+    // Permit path when the token speaks EIP-2612 and the allowance is short: ONE typed-data
+    // signature authorizes EXACTLY this deposit inside the mint transaction — no approve tx,
+    // and nothing left open for the app to pull later (a deposit is a one-off, not a standing
+    // spending relationship, so the permit covers the amount and nothing more).
+    if (allowance < amount && (await tokenSupportsPermit(token, signer.provider!))) {
+      const deadline = BigInt(Math.floor(Date.now() / 1000) + 1800);
+      const sig = await signEip2612(signer, token, addresses.lyc, amount, deadline);
+      const { v, r, s } = ethers.Signature.from(sig);
+      const receipt = await (
+        await sendReplacing(
+          address,
+          (o) =>
+            h
+              .getFunction("mintWithCollateralPermit(address,address,uint256,address,uint256,uint8,bytes32,bytes32)")(
+                token, amount, ethers.ZeroAddress, deadline, v, r, s, o,
+              ),
+          2_500_000n,
+        )
+      ).wait();
+      const { logLycMint } = await import("./sessionLog");
+      logLycMint({ shares: sharesMinted.toString(), usdValue: usdValue.toString(), paidInEth: false }).catch(() => {});
+      return receipt;
+    }
+
+    // Fallback path: token has no EIP-2612 — approve (max, the standing-allowance tradeoff the
+    // permit path avoids) then the ordinary mint. Pin the explicit overload: the full EarnPool
+    // ABI carries BOTH mintWithCollateral shapes — (address,uint256) and
+    // (address,uint256,address pairPool) — and ethers v6's resolver throws "ambiguous function
+    // description" when an overrides object rides along with an overloaded call unless the
+    // signature is spelled out. The earn page means a PLAIN deposit (no eager-pair pool), which
+    // is the 2-arg shape: on-chain that passes pairPool = address(0), and the contract skips the
+    // eager-pair path on its own.
     const receipt = await (
       await sendReplacing(
         address,
@@ -575,15 +599,49 @@ export async function fetchLycPnl(
     h.queryFilter(toFilter, 0) as Promise<ethers.EventLog[]>,
   ]);
 
-  // Which mints are fee payouts: the transactions where EarnPool emitted `FeeMint` for this
-  // holder. Best-effort -- if the scan fails the rows fall back to plain "deposit" mints.
-  const feeMintTxHashes = new Set<string>();
+  // The accounting events, joined to the Transfer skeleton by transaction hash:
+  //   Minted(user, usdValue, hfycOut, paidInEth)  -> a deposit's ACTUAL cost in USD
+  //   FeeMint(recipient, hfycAmount, usdValue, …) -> a fee payout's USD value AT MINT TIME
+  //   Redeemed(user, shares, usdgOut, wethOut, covered) -> a redeem's ACTUAL proceeds
+  // These are what realized PnL must be built from. The previous version assumed every mint was
+  // a $1 deposit and valued every redeem at TODAY's NAV, so realized LYC PnL was wrong for any
+  // deposit above/below $1 -- and doubly wrong once fee mints (minted at NAV, costed at $1) and
+  // NAV-moving redeems entered the book.
+  const mintCostByTx = new Map<string, bigint>();   // tx -> USD paid for the minted shares
+  const feeMintTxs = new Set<string>();             // tx -> mint came from a harvest fee payout
+  const redeemOutByTx = new Map<string, { usdg: bigint; weth: bigint }>();
   try {
-    for (const e of await h.queryFilter(h.filters.FeeMint(holder), 0)) {
-      feeMintTxHashes.add(e.transactionHash.toLowerCase());
+    for (const e of (await h.queryFilter(h.filters.Minted(holder), 0)) as ethers.EventLog[]) {
+      const usd = e.args?.usdValue as bigint | undefined;
+      const txh = e.transactionHash.toLowerCase();
+      if (usd) mintCostByTx.set(txh, (mintCostByTx.get(txh) ?? 0n) + usd);
+    }
+    for (const e of (await h.queryFilter(h.filters.FeeMint(holder), 0)) as ethers.EventLog[]) {
+      const usd = e.args?.usdValue as bigint | undefined;
+      const txh = e.transactionHash.toLowerCase();
+      feeMintTxs.add(txh);
+      if (usd) mintCostByTx.set(txh, (mintCostByTx.get(txh) ?? 0n) + usd);
+    }
+    for (const e of (await h.queryFilter(h.filters.Redeemed(holder), 0)) as ethers.EventLog[]) {
+      const txh = e.transactionHash.toLowerCase();
+      const prev = redeemOutByTx.get(txh);
+      redeemOutByTx.set(txh, {
+        usdg: (prev?.usdg ?? 0n) + ((e.args?.usdgOut as bigint) ?? 0n),
+        weth: (prev?.weth ?? 0n) + ((e.args?.wethOut as bigint) ?? 0n),
+      });
     }
   } catch {
-    // classification unavailable
+    // event scan failed -- cost/proceeds fall back to the $1/current-NAV approximations below
+  }
+
+  // WETH redeem proceeds are valued at the current oracle mark. Historical per-block marks are
+  // not available from the mock oracle, and in-kind WETH slices are typically the minority leg;
+  // the USDG leg (the majority) is the actual event value.
+  let ethUsdWad = 0n;
+  try {
+    ethUsdWad = await readEthUsdWad(addresses.oracle);
+  } catch {
+    // oracle unreadable -- WETH legs value at 0 rather than failing the whole PnL
   }
 
   // Combine and sort by block number
@@ -604,15 +662,16 @@ export async function fetchLycPnl(
   for (const e of mintEvents) {
     const ts = await blockTime(e.blockNumber);
     const shares = e.args[2] as bigint;
-    // NAV at mint time: we use the share value. For mints, the user paid NAV per share.
-    // We can't know exact NAV at past time easily, so we approximate with $1 for deposits
-    // and use the value for fee mints. For simplicity, track the shares and current NAV.
+    const isFeeMint = feeMintTxs.has(e.transactionHash.toLowerCase());
+    const costUsd = mintCostByTx.get(e.transactionHash.toLowerCase()) ?? shares; // fallback: $1/share
     txs.push({
       type: "mint",
-      source: feeMintTxHashes.has(e.transactionHash.toLowerCase()) ? "fees" : "deposit",
+      source: isFeeMint ? "fees" : "deposit",
       shares,
-      valueUsd: shares, // 1:1 at mint (USDG or ETH converted)
-      navAtTime: WAD, // minted at $1
+      valueUsd: costUsd,
+      // What the mint was actually worth per share when it happened: ~$1 for deposits, the
+      // harvest-time NAV for fee payouts.
+      navAtTime: shares > 0n ? (costUsd * WAD) / shares : WAD,
       timestamp: ts,
       txHash: e.transactionHash,
     });
@@ -621,11 +680,16 @@ export async function fetchLycPnl(
   for (const e of redeemEvents) {
     const ts = await blockTime(e.blockNumber);
     const shares = e.args[2] as bigint;
+    // Actual proceeds from the Redeemed event: USDG cash plus the WETH in-kind slice, the WETH
+    // leg valued at the current oracle mark. Without the event (scan failure) fall back to
+    // shares at today's NAV -- the old approximation.
+    const out = redeemOutByTx.get(e.transactionHash.toLowerCase());
+    const proceeds = out ? out.usdg + (out.weth * ethUsdWad) / WAD : (shares * currentNav) / WAD;
     txs.push({
       type: "redeem",
       shares,
-      valueUsd: 0n, // will be computed from FIFO
-      navAtTime: currentNav,
+      valueUsd: proceeds,
+      navAtTime: shares > 0n ? (proceeds * WAD) / shares : currentNav,
       timestamp: ts,
       txHash: e.transactionHash,
     });
@@ -651,7 +715,7 @@ export async function fetchLycPnl(
     } else {
       // Redeem: consume oldest lots first
       let remaining = tx.shares;
-      const redeemValue = (tx.shares * currentNav) / WAD;
+      const redeemValue = tx.valueUsd; // actual event proceeds (cash + in-kind), not a re-mark
 
       while (remaining > 0n && lots.length > 0) {
         const lot = lots[0];
@@ -687,4 +751,66 @@ export async function fetchLycPnl(
     lots,
     history: txs,
   };
+}
+
+// ---------------------------------------------------------------
+//                     EIP-2612 PERMIT SIGNING
+// ---------------------------------------------------------------
+
+const PERMIT_SUPPORT_CACHE = new Map<string, boolean>();
+
+/// Whether `token` implements EIP-2612. Probed once via `nonces()` (a permit-gated flow cannot
+/// work without it) and cached per chain — the answer is a property of the token contract.
+export async function tokenSupportsPermit(token: string, provider: ethers.Provider): Promise<boolean> {
+  const net = await provider.getNetwork();
+  const key = `${net.chainId.toString()}:${token.toLowerCase()}`;
+  const cached = PERMIT_SUPPORT_CACHE.get(key);
+  if (cached !== undefined) return cached;
+  let ok = false;
+  try {
+    const c = new ethers.Contract(token, ["function nonces(address) view returns (uint256)"], provider);
+    await c.nonces.staticCall(token);
+    ok = true;
+  } catch {
+    ok = false;
+  }
+  PERMIT_SUPPORT_CACHE.set(key, ok);
+  return ok;
+}
+
+/// Signs an EIP-2612 permit for `value` with the connected wallet, matching the quote token's
+/// on-chain domain (OZ ERC20Permit: EIP712(name, "1") with chainId + verifyingContract).
+export async function signEip2612(
+  signer: ethers.Signer,
+  token: string,
+  spender: string,
+  value: bigint,
+  deadline: bigint,
+): Promise<string> {
+  const [name, nonce, network] = await Promise.all([
+    new ethers.Contract(token, ["function name() view returns (string)"], signer).name(),
+    new ethers.Contract(token, ["function nonces(address) view returns (uint256)"], signer).nonces(
+      await signer.getAddress(),
+    ),
+    signer.provider!.getNetwork(),
+  ]);
+  const domain = {
+    name: name as string,
+    version: "1",
+    chainId: Number(network.chainId),
+    verifyingContract: ethers.getAddress(token),
+  };
+  return signer.signTypedData(
+    domain,
+    {
+      Permit: [
+        { name: "owner", type: "address" },
+        { name: "spender", type: "address" },
+        { name: "value", type: "uint256" },
+        { name: "nonce", type: "uint256" },
+        { name: "deadline", type: "uint256" },
+      ],
+    },
+    { owner: await signer.getAddress(), spender, value, nonce, deadline },
+  );
 }

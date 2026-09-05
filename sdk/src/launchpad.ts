@@ -27,6 +27,10 @@ type FactoryMethods = {
   ): Promise<ContractTransactionResponse>;
 };
 
+/// Flat launch fee every createLaunch must pay, in ETH wei — mirrors
+/// LaunchpadFactory.LAUNCH_FEE. Keep in sync with the contract constant.
+export const LAUNCH_FEE_WEI = 500_000_000_000_000n; // 0.0005 ETH
+
 export type CreateLaunchParams = {
   name: string;
   symbol: string;
@@ -140,6 +144,9 @@ export class Launchpad {
     // creatorMinTokensOut = 0 by default: this is the creator's own transaction against a curve
     // initialized in the SAME call — no other trade can land between init and this buy to move
     // the price, so the creator cap is what actually bounds the fill, not a slippage floor.
+    // The 0.0005 ETH launch fee rides on the creation transaction; the SDK's Overrides type
+    // carries it (`value`). Merge AFTER user overrides so the fee cannot be dropped by accident.
+    const overrides = { value: LAUNCH_FEE_WEI, ...(params.overrides ?? {}) };
     const tx = await this.contract.createLaunch(
       params.name,
       params.symbol,
@@ -148,7 +155,7 @@ export class Launchpad {
       leverageEnabled,
       devBuy,
       devBuyMinOut,
-      params.overrides
+      overrides
     );
     const receipt = (await tx.wait())!;
 

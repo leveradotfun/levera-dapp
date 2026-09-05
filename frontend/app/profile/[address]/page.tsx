@@ -159,6 +159,12 @@ function usePositions(launches: LaunchSummary[], holdings: HeldLaunch[] | null, 
       // FIFO over this user's own trades: sells consume the oldest buy lots at their average
       // price. For a fully-exited coin this equals sells minus buys; for a held one it is the
       // profit already banked on the way up.
+      //
+      // Accepted edges: tokens that arrived by TRANSFER (not a scanned buy) have no lot here, so
+      // selling them books the full proceeds as realized profit; and tokens SENT away shrink the
+      // on-chain balance without touching the remaining cost basis, so unrealized reads low by
+      // the cost of what left. Both are transfer hygiene, not trading, and neither applies to
+      // buy-and-sell-through-the-app activity, which is what this page measures.
       const lots: { tokens: number; price: number }[] = [];
       let boughtUsd = 0;
       let soldUsd = 0;

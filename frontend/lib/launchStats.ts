@@ -12,6 +12,12 @@ export type TradePoint = {
   volumeUsd: number; // USD value of the trade
   collateral: number; // the same trade in ETH, for anywhere that quotes the native leg
   tokenAmount: number;
+  /// Exact on-chain amounts, kept so the whole log can be re-marked when the oracle moves: the
+  /// USD figures above are DERIVED from these on every pass (see the re-mark loop in
+  /// fetchLaunchStatsUncoordinated), never frozen at whatever the oracle said when the event was
+  /// first scanned.
+  rawCollateral: bigint;
+  rawTokens: bigint;
   trader: string;
   isBuy: boolean;
   /// "trade" is a real user buy/sell; "rebalance" is a protocol operation with no trader, no
@@ -437,6 +443,8 @@ async function fetchLaunchStatsUncoordinated(
         cached.seen.add(eventKey);
         cached.trades.push({
           ts,
+          rawCollateral: collateral,
+          rawTokens: tokens,
           priceUsd: price,
           volumeUsd,
           collateral: toQuoteAmount(collateral, cached.quoteScale),
@@ -455,6 +463,21 @@ async function fetchLaunchStatsUncoordinated(
     } catch {
       // A failed scan leaves the cache untouched so the next refresh retries the same range.
     }
+  }
+
+  // Re-mark every cached trade at the CURRENT oracle price. The incremental scan caches raw
+  // on-chain amounts; if the USD figures were frozen at first-scan instead, a series scanned
+  // across sessions (or across an oracle move) would price older trades at a different ETH mark
+  // than newer ones, and realized PnL would mix ETH-price drift into trading profit. Re-marking
+  // the whole log each pass keeps every figure -- price, volume, ATH, PnL inputs -- on one mark.
+  // A trade's USD value is therefore "in current ETH terms", which is the consistent choice.
+  for (const t of cached.trades) {
+    if (t.type === "rebalance") {
+      t.skimmedUsd = collateralUsd(t.rawCollateral, collateralPriceUsd, cached.quoteScale);
+      continue;
+    }
+    t.priceUsd = tradePrice(t.rawCollateral, t.rawTokens, collateralPriceUsd, cached.quoteScale) ?? 0;
+    t.volumeUsd = collateralUsd(t.rawCollateral, collateralPriceUsd, cached.quoteScale);
   }
 
   // Every statistic below is about TRADING, so rebalances are excluded here once rather than
