@@ -133,11 +133,3 @@ CREATE TABLE IF NOT EXISTS follows (
 CREATE INDEX IF NOT EXISTS follows_target   ON follows (target);
 CREATE INDEX IF NOT EXISTS follows_follower ON follows (follower);
 
--- Last-known analytics payload (the /analytics page's own computed JSON). Written at most once
--- a minute by the page itself, anchor-checked against the chain server-side, so a refresh paints
--- real numbers instantly and live reads replace them seconds later. One row, monotonically newer.
-CREATE TABLE IF NOT EXISTS analytics_cache (
-  id         text PRIMARY KEY,
-  data       jsonb NOT NULL,
-  updated_at bigint NOT NULL
-);

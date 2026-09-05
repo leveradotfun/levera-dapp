@@ -28,13 +28,11 @@ export default function AnalyticsPage() {
   const handles = useXHandles();
   const [data, setData] = useState<PlatformAnalytics>(EMPTY_ANALYTICS);
   const [loaded, setLoaded] = useState(false);
-  // When the first paint came from the Supabase snapshot rather than a live compute: the ms
+  // When the first paint came from the localStorage snapshot rather than a live compute: the ms
   // epoch of that snapshot, cleared the moment live data lands. Drives the "snapshot from X
   // ago" pill -- without it a visitor cannot tell cached numbers from fresh ones.
   const [cacheTime, setCacheTime] = useState<number | null>(null);
   const liveLandedRef = useRef(false);
-  const lastPostRef = useRef(0);
-  const postingRef = useRef(false);
 
   const refresh = useCallback(async () => {
     if (!addresses) return;
@@ -43,18 +41,16 @@ export default function AnalyticsPage() {
       setData(fresh);
       liveLandedRef.current = true;
       setCacheTime(null);
-      // Share the freshly computed payload with the next visitor: at most one write a minute,
-      // single-flight, fire-and-forget. The API re-checks the numbers against the chain, so a
-      // bad write fails server-side without ever being shown to anyone.
-      const now = Date.now();
-      if (!postingRef.current && now - lastPostRef.current >= 60_000) {
-        postingRef.current = true;
-        lastPostRef.current = now;
-        void fetch("/api/analytics-cache", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ snapshot: fresh, updatedAt: now }),
-        }).catch(() => {}).finally(() => { postingRef.current = false; });
+      // Leave the payload where the NEXT refresh of THIS browser can find it. Per-device by
+      // design: no server round trip, no write endpoint to defend. Keyed per deployment so a
+      // redeploy never paints a dead contract's numbers.
+      try {
+        localStorage.setItem(
+          `analytics-cache:${addresses.factory.toLowerCase()}`,
+          JSON.stringify({ snapshot: fresh, updatedAt: Date.now() }),
+        );
+      } catch {
+        // private mode / quota -- the cache is a nicety, never a requirement
       }
     } catch {
       // anvil down / stale deployment -- keep the last good numbers rather than blanking the page
@@ -64,20 +60,23 @@ export default function AnalyticsPage() {
   }, [addresses]);
 
   useEffect(() => {
-    // Instant first paint from the last-known snapshot, before the (slow) chain scans run.
-    (async () => {
+    // Instant first paint from this browser's last-known snapshot, before the (slow) chain scans
+    // run. First visit on a device has nothing cached -- the skeleton shows until live lands.
+    if (addresses) {
       try {
-        const r = await fetch("/api/analytics-cache");
-        const j = (await r.json()) as { snapshot: PlatformAnalytics | null; updatedAt: number | null };
-        if (j.snapshot && !liveLandedRef.current) {
-          setData(j.snapshot);
-          setLoaded(true);
-          setCacheTime(j.updatedAt ?? Date.now());
+        const raw = localStorage.getItem(`analytics-cache:${addresses.factory.toLowerCase()}`);
+        if (raw && !liveLandedRef.current) {
+          const j = JSON.parse(raw) as { snapshot: PlatformAnalytics; updatedAt?: number };
+          if (j?.snapshot) {
+            setData(j.snapshot);
+            setLoaded(true);
+            setCacheTime(j.updatedAt ?? Date.now());
+          }
         }
       } catch {
-        // no snapshot yet -- the skeleton shows until the live compute lands
+        // corrupt entry -- ignore it and let the live compute win
       }
-    })();
+    }
     refresh();
     const id = setInterval(refresh, 5000);
     return () => clearInterval(id);
@@ -98,7 +97,7 @@ export default function AnalyticsPage() {
           {cacheTime !== null && (
             <span
               className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2.5 py-1 text-[11px] font-medium text-amber-400"
-              title="Loaded from the last-known snapshot in Supabase. Live onchain reads land within seconds and replace it."
+              title="Loaded from this browser's last-known snapshot. Live onchain reads land within seconds and replace it."
             >
               snapshot · {timeAgo(cacheTime)} — updating…
             </span>

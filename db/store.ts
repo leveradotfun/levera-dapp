@@ -382,34 +382,6 @@ export async function getContentBlob(id: string): Promise<{ data: Buffer; conten
   return { data: rows[0].data as Buffer, contentType: rows[0].content_type };
 }
 
-// ---- analytics cache: last-known platform payload, painted on refresh ----------------------
-// Written by the analytics page itself (at most ~once a minute, monotonic), read by every
-// visitor on load so the page paints real numbers instantly and live reads replace them.
-
-export async function getAnalyticsCache(
-  id = "platform",
-): Promise<{ data: unknown; updatedAt: number } | null> {
-  await ensureSchema();
-  const rows = await query<{ data: unknown; updated_at: string }>(
-    `SELECT data, updated_at FROM analytics_cache WHERE id = $1`,
-    [id],
-  );
-  if (rows.length === 0) return null;
-  return { data: rows[0].data, updatedAt: Number(rows[0].updated_at) };
-}
-
-/// Newer-wins: a stale writer (slow tab, replayed request) must never roll the snapshot back.
-export async function saveAnalyticsCache(data: unknown, id = "platform", updatedAt = Date.now()): Promise<void> {
-  await ensureSchema();
-  await query(
-    `INSERT INTO analytics_cache (id, data, updated_at)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at
-      WHERE EXCLUDED.updated_at > analytics_cache.updated_at`,
-    [id, JSON.stringify(data), updatedAt],
-  );
-}
-
 // ---- token metadata (image + social links, creator-signed) ---------------------------------
 
 export type TokenMetadata = {
