@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppState } from "@/lib/appState";
 import { useWallet } from "@/lib/wallet";
@@ -28,11 +28,34 @@ export default function AnalyticsPage() {
   const handles = useXHandles();
   const [data, setData] = useState<PlatformAnalytics>(EMPTY_ANALYTICS);
   const [loaded, setLoaded] = useState(false);
+  // When the first paint came from the Supabase snapshot rather than a live compute: the ms
+  // epoch of that snapshot, cleared the moment live data lands. Drives the "snapshot from X
+  // ago" pill -- without it a visitor cannot tell cached numbers from fresh ones.
+  const [cacheTime, setCacheTime] = useState<number | null>(null);
+  const liveLandedRef = useRef(false);
+  const lastPostRef = useRef(0);
+  const postingRef = useRef(false);
 
   const refresh = useCallback(async () => {
     if (!addresses) return;
     try {
-      setData(await fetchPlatformAnalytics(addresses));
+      const fresh = await fetchPlatformAnalytics(addresses);
+      setData(fresh);
+      liveLandedRef.current = true;
+      setCacheTime(null);
+      // Share the freshly computed payload with the next visitor: at most one write a minute,
+      // single-flight, fire-and-forget. The API re-checks the numbers against the chain, so a
+      // bad write fails server-side without ever being shown to anyone.
+      const now = Date.now();
+      if (!postingRef.current && now - lastPostRef.current >= 60_000) {
+        postingRef.current = true;
+        lastPostRef.current = now;
+        void fetch("/api/analytics-cache", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ snapshot: fresh, updatedAt: now }),
+        }).catch(() => {}).finally(() => { postingRef.current = false; });
+      }
     } catch {
       // anvil down / stale deployment -- keep the last good numbers rather than blanking the page
     } finally {
@@ -41,6 +64,20 @@ export default function AnalyticsPage() {
   }, [addresses]);
 
   useEffect(() => {
+    // Instant first paint from the last-known snapshot, before the (slow) chain scans run.
+    (async () => {
+      try {
+        const r = await fetch("/api/analytics-cache");
+        const j = (await r.json()) as { snapshot: PlatformAnalytics | null; updatedAt: number | null };
+        if (j.snapshot && !liveLandedRef.current) {
+          setData(j.snapshot);
+          setLoaded(true);
+          setCacheTime(j.updatedAt ?? Date.now());
+        }
+      } catch {
+        // no snapshot yet -- the skeleton shows until the live compute lands
+      }
+    })();
     refresh();
     const id = setInterval(refresh, 5000);
     return () => clearInterval(id);
@@ -56,7 +93,17 @@ export default function AnalyticsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-foreground">Analytics</h1>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-3xl font-bold text-foreground">Analytics</h1>
+          {cacheTime !== null && (
+            <span
+              className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2.5 py-1 text-[11px] font-medium text-amber-400"
+              title="Loaded from the last-known snapshot in Supabase. Live onchain reads land within seconds and replace it."
+            >
+              snapshot · {timeAgo(cacheTime)} — updating…
+            </span>
+          )}
+        </div>
         <p className="mt-1 text-sm text-secondary">
           Independent onchain reporting for Levera markets.
         </p>
