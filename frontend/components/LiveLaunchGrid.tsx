@@ -4,6 +4,8 @@ import { LaunchSummary, displayQuoteSymbol, usdCompact } from "@/lib/launchpad";
 import PriceLabelRaw from "@/components/PriceLabel";
 import TokenIcon from "@/components/TokenIcon";
 import { timeAgo } from "@/lib/utils";
+import { useXHandles } from "@/lib/xHandles";
+import TraderIdentity from "@/components/TraderIdentity";
 
 const PALETTE = ["#ECE3D1", "#22c55e", "#38bdf8", "#f472b6", "#fbbf24", "#a78bfa", "#fb7185", "#34d399"];
 const EMOJI = ["🐕", "🚀", "🌙", "🐸", "💎", "🔥", "⚡", "🦍", "🍌", "👽"];
@@ -42,6 +44,8 @@ export default function LiveLaunchGrid({
   launches: LaunchSummary[];
   onSelect: (launch: LaunchSummary) => void;
 }) {
+  // Called before the empty-state early return below: hooks run unconditionally.
+  const xHandles = useXHandles();
   if (launches.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-border p-12 text-center">
@@ -107,8 +111,10 @@ export default function LiveLaunchGrid({
             {/* Pair token + graduation state -- the two things a scanner can't trade without */}
             <div className="mt-2.5 flex items-center gap-1.5 text-sm">
               <span className="text-muted">{l.graduated ? "Paired with" : "Raising in"}</span>
-              <TokenIcon symbol={displayQuoteSymbol(l.quoteSymbol)} size={16} />
-              <span className="font-medium text-foreground">{displayQuoteSymbol(l.quoteSymbol)}</span>
+              {/* Logo only -- hovering the icon names the quote asset */}
+              <span title={`${l.graduated ? "Paired with" : "Raising in"} ${displayQuoteSymbol(l.quoteSymbol)}`}>
+                <TokenIcon symbol={displayQuoteSymbol(l.quoteSymbol)} size={16} />
+              </span>
               {l.graduated ? (
                 <span
                   className="ml-1 inline-flex shrink-0 items-center gap-1 rounded-full bg-green/15 px-2 py-0.5 text-[10px] font-semibold text-green"
@@ -140,7 +146,8 @@ export default function LiveLaunchGrid({
 
             <div className="mt-2 flex items-center gap-1 text-xs text-muted">
               <CreatorIcon />
-              <span className="font-mono truncate">by {l.creator.slice(0, 6)}...{l.creator.slice(-4)}</span>
+              <span className="truncate">by</span>
+              <TraderIdentity address={l.creator} identity={xHandles.get(l.creator.toLowerCase())} size={14} className="text-muted" />
               <span className="ml-auto shrink-0">{timeAgo(l.stats.createdAt) === "—" ? null : `${timeAgo(l.stats.createdAt)} ago`}</span>
             </div>
 

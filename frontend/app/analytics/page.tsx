@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppState } from "@/lib/appState";
+import { useWallet } from "@/lib/wallet";
 import { EMPTY_ANALYTICS, PlatformAnalytics, fetchPlatformAnalytics } from "@/lib/analytics";
 import { usdCompact } from "@/lib/launchpad";
 import { timeAgo } from "@/lib/utils";
@@ -11,6 +12,7 @@ import PriceLabel from "@/components/PriceLabel";
 import DailyBarChart from "@/components/DailyBarChart";
 import TraderIdentity from "@/components/TraderIdentity";
 import { SkeletonRows, SkeletonStat, Skeleton } from "@/components/Skeleton";
+import ShimmerText from "@/components/ShimmerText";
 
 function compactUsd(n: number): string {
   if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(2)}B`;
@@ -22,6 +24,7 @@ function compactUsd(n: number): string {
 export default function AnalyticsPage() {
   const router = useRouter();
   const { addresses } = useAppState();
+  const wallet = useWallet(addresses);
   const handles = useXHandles();
   const [data, setData] = useState<PlatformAnalytics>(EMPTY_ANALYTICS);
   const [loaded, setLoaded] = useState(false);
@@ -44,7 +47,7 @@ export default function AnalyticsPage() {
   }, [refresh]);
 
   if (!addresses) {
-    return <div className="p-10 text-center text-sm text-muted">Connecting to network...</div>;
+    return <div className="p-10 text-center text-sm text-muted"><ShimmerText>Connecting to network...</ShimmerText></div>;
   }
 
   const totalFees = data.protocolFeesUsd + data.creatorFeesUsd;
@@ -447,7 +450,12 @@ export default function AnalyticsPage() {
                     <span className="w-4 shrink-0 text-xs text-muted">{i + 1}</span>
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-xs text-foreground">
-                        <TraderIdentity address={t.address} identity={identity} size={18} />
+                        <TraderIdentity
+                          address={t.address}
+                          identity={identity}
+                          size={18}
+                          isMe={!!wallet.address && t.address.toLowerCase() === wallet.address.toLowerCase()}
+                        />
                       </div>
                       <div className="font-mono text-[11px] text-secondary">
                         {t.trades} trades · {compactUsd(t.volumeUsd)} vol

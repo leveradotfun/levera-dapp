@@ -288,7 +288,10 @@ export async function listXProfiles(): Promise<Record<string, XProfile>> {
   }>(`SELECT address, id, name, username, profile_image_url, connected_at, updated_at FROM x_profiles`);
   const out: Record<string, XProfile> = {};
   for (const r of rows) {
-    out[r.address] = {
+    // Keys are normalized on write (norm()), but re-normalize on the way out too: every client
+    // lookup is lowercase, so one mixed-case row here would silently become an unreadable (or
+    // worse, wallet-ambiguous) entry.
+    out[norm(r.address)] = {
       id: r.id,
       name: r.name,
       username: r.username,
@@ -605,4 +608,57 @@ export async function listFollows(address: string, kind: "followers" | "followin
     xUsername: r.username ?? "",
     xImageUrl: r.profile_image_url ?? "",
   }));
+}
+
+/// Trending launches for the marquee bar: last known implied price (usd/token), the price at the
+/// start of the 24h window (or listing price for younger coins), and 24h USD volume — all off
+/// the `trades` table, which every swap already feeds. A coin with no trades in the window is
+/// not trending, by definition.
+export type TrendingRow = {
+  launch: string;
+  volume24h: number;
+  priceUsd: number;
+  change24h: number;
+  imageUrl: string | null;
+};
+
+export async function listTrending(cutoffMs: number, limit = 24): Promise<TrendingRow[]> {
+  await ensureSchema();
+  const rows = await query<{ launch: string; vol24: string; p_start: string; p_now: string; image_url: string | null }>(
+    `WITH agg AS (
+       SELECT launch,
+              COALESCE(SUM(usd_wad::numeric) FILTER (WHERE t >= $1), 0) AS vol24
+       FROM trades GROUP BY launch HAVING MAX(t) >= $1
+     ),
+     firstp AS (
+       SELECT DISTINCT ON (launch) launch,
+              (usd_wad::numeric / NULLIF(token_wad::numeric, 0)) AS p_start
+       FROM trades WHERE t >= $1 AND token_wad::numeric > 0 ORDER BY launch, t ASC
+     ),
+     lastp AS (
+       SELECT DISTINCT ON (launch) launch,
+              (usd_wad::numeric / NULLIF(token_wad::numeric, 0)) AS p_now
+       FROM trades WHERE token_wad::numeric > 0 ORDER BY launch, t DESC
+     )
+     SELECT a.launch, a.vol24, f.p_start, l.p_now, m.image_url
+     FROM agg a
+     JOIN lastp l USING (launch)
+     JOIN firstp f USING (launch)
+     LEFT JOIN token_metadata m ON m.launch = a.launch
+     WHERE f.p_start > 0
+     ORDER BY a.vol24 DESC
+     LIMIT $2`,
+    [cutoffMs, limit],
+  );
+  return rows.map((r) => {
+    const pStart = Number(r.p_start);
+    const pNow = Number(r.p_now);
+    return {
+      launch: r.launch,
+      volume24h: Number(r.vol24) / 1e18,
+      priceUsd: pNow / 1e18,
+      change24h: pStart > 0 ? ((pNow - pStart) / pStart) * 100 : 0,
+      imageUrl: r.image_url,
+    };
+  });
 }

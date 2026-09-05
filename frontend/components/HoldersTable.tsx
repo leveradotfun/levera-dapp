@@ -12,9 +12,11 @@ interface Holder {
 
 interface HoldersTableProps {
   holders: Holder[];
+  /// The connected viewer's address, so their own row gets the "(Me)" tag.
+  viewerAddress?: string;
 }
 
-export default function HoldersTable({ holders }: HoldersTableProps) {
+export default function HoldersTable({ holders, viewerAddress }: HoldersTableProps) {
   const xHandles = useXHandles();
   return (
     <div className="overflow-x-auto">
@@ -35,6 +37,7 @@ export default function HoldersTable({ holders }: HoldersTableProps) {
                   address={h.address}
                   identity={xHandles.get(h.address.toLowerCase())}
                   linkHandle
+                  isMe={!!viewerAddress && h.address.toLowerCase() === viewerAddress.toLowerCase()}
                 />
               </td>
               <td className="text-right py-2.5 px-3 text-foreground">

@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useAppState } from "@/lib/appState";
+import { useWallet } from "@/lib/wallet";
 
 const COLLAPSE_KEY = "launchpad-frontend:rail-collapsed";
 
-type Item = { href: string; label: string; icon: React.ReactNode };
+type Item = { href: string; label: string; icon: React.ReactNode; profileRoute?: boolean };
 
 const ICON = "h-[22px] w-[22px]";
 
@@ -45,6 +47,9 @@ export const NAV_ITEMS: Item[] = [
   {
     href: "/profile",
     label: "Portfolio",
+    // Deep-links straight to the connected wallet's profile — no bare /profile hop. Falls back
+    // to /profile itself when no wallet is connected (that page shows the connect prompt).
+    profileRoute: true,
     icon: (
       <svg className={ICON} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M10 3h4l-1 3h-2l-1-3Z" />
@@ -58,12 +63,32 @@ export const NAV_ITEMS: Item[] = [
   },
 ];
 
+/// The href a nav item should point at for this viewer. Only the profile route is
+/// viewer-dependent: with a wallet connected it embeds the address so the click lands on the
+/// profile directly instead of bouncing through /profile's redirect.
+export function navItemHref(item: Item, walletAddress: string | null | undefined): string {
+  if (item.profileRoute && walletAddress) return `/profile/${walletAddress}`;
+  return item.href;
+}
+
+/// Active state for a nav item at the current pathname. The profile item lights up on the bare
+/// /profile page and on the VIEWER'S OWN profile — not on other wallets' profiles.
+export function navItemActive(item: Item, pathname: string, walletAddress: string | null | undefined): boolean {
+  if (item.profileRoute) {
+    if (pathname === "/profile") return true;
+    return !!walletAddress && pathname.toLowerCase() === `/profile/${walletAddress.toLowerCase()}`;
+  }
+  return pathname === item.href;
+}
+
 /// The persistent left rail. Collapsed by default to an icon strip and expandable to show labels,
 /// with the choice remembered per browser -- navigation shouldn't cost horizontal room on a page
 /// that is mostly a wide table. Phones replace this rail entirely with the MobileNav bottom bar.
 export default function SideRail() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(true);
+  const { addresses } = useAppState();
+  const wallet = useWallet(addresses);
 
   // Read after mount, not in a lazy initializer: localStorage doesn't exist during server
   // rendering, and seeding state from it directly would desync the first client render.
@@ -101,11 +126,12 @@ export default function SideRail() {
 
       <nav className="flex flex-1 flex-col gap-1 px-2 pt-2">
         {NAV_ITEMS.map((item) => {
-          const active = pathname === item.href;
+          const href = navItemHref(item, wallet.address);
+          const active = navItemActive(item, pathname, wallet.address);
           return (
             <Link
               key={item.href}
-              href={item.href}
+              href={href}
               title={collapsed ? item.label : undefined}
               className={`flex h-11 items-center gap-3 rounded-xl px-[10px] transition-colors ${
                 active ? "bg-surface text-accent" : "text-muted hover:bg-surface hover:text-foreground"

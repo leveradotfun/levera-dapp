@@ -33,6 +33,8 @@ import { FollowInfo, fetchFollowInfo, fetchFollowList, FollowListEntry, setFollo
 import { useTopTraders, type TopTraderRow } from "@/lib/topTraders";
 import { useXHandles, type HandleMap } from "@/lib/xHandles";
 import { toastError, toastSuccess } from "@/lib/toast";
+import PopNumber from "@/components/PopNumber";
+import ShimmerText from "@/components/ShimmerText";
 
 type CreatedRow = { launch: LaunchSummary; fees: CreatorFees };
 type Tab = "open" | "closed" | "activity" | "lyc";
@@ -393,7 +395,7 @@ function TopTradersPanel({
     <div className="rounded-xl border border-border bg-card p-4">
       <div className="flex items-center justify-between border-b border-border pb-2">
         <h2 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">Top PNL</h2>
-        {scanning ? <span className="text-[10px] text-muted">scanning…</span> : null}
+        {scanning ? <span className="text-[10px] text-muted"><ShimmerText>scanning…</ShimmerText></span> : null}
       </div>
       {visible.length === 0 ? (
         <p className="pt-3 text-xs text-muted">No traders yet — any buy or sell on a coin ranks the wallet here.</p>
@@ -619,6 +621,18 @@ export default function ProfileAddressPage() {
   // any sidebar follow toggles (followVersion), so the buttons never drift from the graph.
   const topTraders = useTopTraders(launches, addresses !== null);
   const handles = useXHandles();
+
+  // The identity the header shows. Own profile: the connected X session. Anyone else: the local
+  // cache first, then the shared registry via the handles map — a visitor who has never seen
+  // this wallet before still gets name + picture instead of a bare address.
+  const registryIdentity = profileAddress ? handles.get(profileAddress.toLowerCase()) : undefined;
+  const displayProfile = displayXProfile ?? (registryIdentity
+    ? {
+        name: registryIdentity.name || `@${registryIdentity.username}`,
+        username: registryIdentity.username,
+        profileImageUrl: registryIdentity.avatar,
+      }
+    : null);
   const [viewerFollowing, setViewerFollowing] = useState<Set<string>>(new Set());
   const [followVersion, setFollowVersion] = useState(0);
   useEffect(() => {
@@ -649,7 +663,7 @@ export default function ProfileAddressPage() {
   }
 
   if (!addresses) {
-    return <div className="p-10 text-center text-sm text-muted">Connecting to network...</div>;
+    return <div className="p-10 text-center text-sm text-muted"><ShimmerText>Connecting to network...</ShimmerText></div>;
   }
 
   const lifetimeFeesUsd = (created ?? []).reduce((sum, r) => sum + r.fees.lifetimeUsd, 0n);
@@ -672,32 +686,17 @@ export default function ProfileAddressPage() {
     : null;
 
   return (
-    <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
-      {/* ── Left rail: other traders, ranked by PnL ── */}
-      <aside className="order-last self-start lg:order-first lg:sticky lg:top-4">
-        <TopTradersPanel
-          rows={topTraders.rows}
-          scanning={topTraders.scanning}
-          viewerAddress={wallet.address?.toLowerCase() ?? null}
-          viewerFollowing={viewerFollowing}
-          handles={handles}
-          onFollowed={() => {
-            setFollowVersion((v) => v + 1);
-            reloadFollows();
-          }}
-        />
-      </aside>
-
+    <div className="mx-auto grid w-full max-w-7xl grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
       <div className="min-w-0 space-y-4">
       {/* ── Identity header ── */}
       <div className="overflow-hidden rounded-xl border border-border bg-card">
         <div className="h-24 bg-gradient-to-r from-green/15 via-accent/10 to-transparent" />
         <div className="px-5 pb-5">
           <div className="-mt-9 flex items-end justify-between gap-3">
-            {displayXProfile ? (
+            {displayProfile ? (
               <img
-                src={displayXProfile.profileImageUrl}
-                alt={displayXProfile.name}
+                src={displayProfile.profileImageUrl}
+                alt={displayProfile.name}
                 className="h-[72px] w-[72px] shrink-0 rounded-2xl border-4 border-card object-cover"
               />
             ) : (
@@ -709,7 +708,7 @@ export default function ProfileAddressPage() {
               </div>
             )}
             <div className="mb-1 flex shrink-0 items-center gap-2">
-              {isOwnProfile && !displayXProfile ? (
+              {isOwnProfile && !displayProfile ? (
                 <button
                   onClick={xAuth.connect}
                   className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:border-accent/40"
@@ -732,20 +731,26 @@ export default function ProfileAddressPage() {
           </div>
 
           <div className="mt-3">
-            {displayXProfile ? (
+            {displayProfile ? (
               <>
-                <h1 className="text-xl font-bold text-foreground">{displayXProfile.name}</h1>
+                <h1 className="text-xl font-bold text-foreground">
+                  {isOwnProfile ? <span className="mr-1.5 text-accent">(Me)</span> : null}
+                  {displayProfile.name}
+                </h1>
                 <a
-                  href={`https://x.com/${displayXProfile.username}`}
+                  href={`https://x.com/${displayProfile.username}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="mt-0.5 inline-block text-sm text-accent hover:underline"
                 >
-                  @{displayXProfile.username}
+                  @{displayProfile.username}
                 </a>
               </>
             ) : (
-              <h1 className="font-mono text-xl font-bold text-foreground">{shortAddress(profileAddress)}</h1>
+              <h1 className="font-mono text-xl font-bold text-foreground">
+                {isOwnProfile ? <span className="mr-1.5 font-sans text-accent">(Me)</span> : null}
+                {shortAddress(profileAddress)}
+              </h1>
             )}
           </div>
 
@@ -791,9 +796,10 @@ export default function ProfileAddressPage() {
         <div className="rounded-xl border border-border bg-card p-5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <div className={`truncate font-mono text-4xl font-bold tracking-tight ${safeBook.totalProfit >= 0 ? "text-foreground" : "text-red"}`}>
-                {usdNum(safeBook.totalProfit)}
-              </div>
+              <PopNumber
+                value={usdNum(safeBook.totalProfit)}
+                className={`truncate font-mono text-4xl font-bold tracking-tight ${safeBook.totalProfit >= 0 ? "text-foreground" : "text-red"}`}
+              />
               <div className="mt-1 text-[10px] uppercase tracking-wider text-muted">Profit</div>
             </div>
             <div className="flex shrink-0 gap-1 rounded-lg border border-border bg-surface p-1">
@@ -995,6 +1001,21 @@ export default function ProfileAddressPage() {
         <FollowListModal profileAddress={profileAddress} kind={followModal} onClose={() => setFollowModal(null)} />
       ) : null}
       </div>
+
+      {/* ── Right rail: other traders, ranked by PnL ── */}
+      <aside className="self-start lg:sticky lg:top-4">
+        <TopTradersPanel
+          rows={topTraders.rows}
+          scanning={topTraders.scanning}
+          viewerAddress={wallet.address?.toLowerCase() ?? null}
+          viewerFollowing={viewerFollowing}
+          handles={handles}
+          onFollowed={() => {
+            setFollowVersion((v) => v + 1);
+            reloadFollows();
+          }}
+        />
+      </aside>
     </div>
   );
 }

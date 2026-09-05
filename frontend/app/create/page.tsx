@@ -50,9 +50,12 @@ export default function CreatePage() {
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const res = await fetch("/api/arweave/upload", { method: "POST", body: fd });
+      // Pinned to IPFS via Pinata (falls back to the local blob store when PINATA_JWT is not
+      // configured — the response says which). gatewayUrl is same-origin and always renderable.
+      const res = await fetch("/api/ipfs/upload", { method: "POST", body: fd });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Upload failed");
+      if (json.pinned === false && json.message) setError(json.message);
       setImageUrl(json.gatewayUrl || json.url);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Image upload failed");

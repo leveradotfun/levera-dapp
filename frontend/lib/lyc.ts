@@ -38,6 +38,12 @@ export type LycGlobal = {
   /// `> WAD` after the contract added a 50 bps tolerance band. Both drifted wrong, silently.
   redeemFeeBps: bigint;
   coveredCrWad: bigint;
+  /// Entry fee for mints (public constant on EarnPool, read live — same drift-guard as the
+  /// redeem fee above).
+  mintFeeBps: bigint;
+  /// Idle cash + pool vaults, EXCLUDING the meme AMM reserves. This — not totalAssetsUsd — is
+  /// the base an impaired (uncovered) mint prices at, mirroring `_issue` exactly.
+  seniorBackedAssetsUsd: bigint;
 };
 
 /// One holder's position. Issuance is instant: what you hold is what you own and can exit.
@@ -69,6 +75,8 @@ export async function fetchLycGlobal(addresses: DeployedAddresses): Promise<LycG
     cashYieldUsd,
     redeemFeeBps,
     coveredCrWad,
+    mintFeeBps,
+    seniorBackedAssetsUsd,
   ] = await Promise.all([
     h.nav() as Promise<bigint>,
     h.liability() as Promise<bigint>,
@@ -86,6 +94,8 @@ export async function fetchLycGlobal(addresses: DeployedAddresses): Promise<LycG
     h.totalCashYieldUsd() as Promise<bigint>,
     h.REDEEM_FEE_BPS() as Promise<bigint>,
     h.COVERED_CR_WAD() as Promise<bigint>,
+    h.MINT_FEE_BPS() as Promise<bigint>,
+    h.seniorBackedAssetsUsd() as Promise<bigint>,
   ]);
   const pending = await pendingOccupancyUsd(allFactories(addresses), fundingRate);
   // NAV / liability / CR are the on-chain figures redeem pays. Folding pending occupancy into
@@ -109,6 +119,8 @@ export async function fetchLycGlobal(addresses: DeployedAddresses): Promise<LycG
     cashYieldUsd,
     redeemFeeBps,
     coveredCrWad,
+    mintFeeBps,
+    seniorBackedAssetsUsd,
   };
 }
 
@@ -472,10 +484,19 @@ export async function freeIdleCash(addresses: DeployedAddresses): Promise<number
   return n;
 }
 
-/// What a deposit mints right now, at the prevailing NAV.
+/// What a deposit mints right now. Mirrors `EarnPool._issue` line for line:
+///   navNow  = nav() while the book is covered (or empty), else seniorBackedAssetsUsd/supply
+///   shares  = (usd − usd·mintFeeBps/10000) · WAD / navNow
+/// The fee is read live off the contract, and the impaired branch prices at the junior-
+/// excluding base — quoting full TVL here would promise shares backed by the meme AMM's
+/// reserves, the exact F1 accounting this app should not advertise either.
 export function quoteMint(g: LycGlobal, usdIn: bigint): bigint {
-  if (usdIn <= 0n || g.nav === 0n) return 0n;
-  return (usdIn * WAD) / g.nav;
+  if (usdIn <= 0n) return 0n;
+  const covered = g.supply === 0n || g.globalCr > g.coveredCrWad;
+  const navNow = covered ? g.nav : g.supply > 0n ? (g.seniorBackedAssetsUsd * WAD) / g.supply : 0n;
+  if (navNow === 0n) return 0n;
+  const netUsd = usdIn - (usdIn * g.mintFeeBps) / 10_000n;
+  return (netUsd * WAD) / navNow;
 }
 
 /// What a redemption would pay right now. Mirrors the contract exactly, including the branch:

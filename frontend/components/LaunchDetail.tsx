@@ -8,6 +8,9 @@ import ConnectWalletButton from "@/components/ConnectWalletButton";
 import { usePriceHistory, computePeriodChanges } from "@/lib/priceHistory";
 import { useTradeHistory } from "@/lib/trades";
 import { fetchHolderCount } from "@/lib/launchStats";
+import { useXHandles } from "@/lib/xHandles";
+import PopNumber from "@/components/PopNumber";
+import TraderIdentity from "@/components/TraderIdentity";
 import dynamic from "next/dynamic";
 import { SkeletonChart, SkeletonRows } from "@/components/Skeleton";
 
@@ -94,6 +97,8 @@ export default function LaunchDetail({
 }) {
   const priceHistory = usePriceHistory(launch.address, addresses?.oracle);
   const { trades, loading: tradesLoading, refresh } = useTradeHistory(launch.address, addresses);
+  // The creator's connected X identity, so the byline shows name + picture when known.
+  const xHandles = useXHandles();
   // Real holder count: everyone who ever received a transfer of this coin and still holds a
   // nonzero balance, not "unique buyers ∪ sellers in the last 24h" (see fetchHolderCount's own
   // comment for why that undercounts long-term holders and overcounts anyone who fully exited).
@@ -797,39 +802,17 @@ export default function LaunchDetail({
               )}
               <span>{timeAgo(launch.stats.createdAt)} ago</span>
               <span className="text-muted">·</span>
-              <span>{launch.creator.slice(0, 6)}...{launch.creator.slice(-4)}</span>
+              <TraderIdentity address={launch.creator} identity={xHandles.get(launch.creator.toLowerCase())} size={14} className="text-muted" />
             </div>
-            {meta?.description ? (
-              <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-muted">{meta.description}</p>
-            ) : null}
-            {meta && (meta.website || meta.telegram || meta.discord) && (
-              <div className="flex items-center gap-3 mt-1">
-                {meta.website && (
-                  <a href={meta.website} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-accent hover:underline">
-                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9 9 0 100-18 9 9 0 000 18zM3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 010 18" /></svg>
-                    Website
-                  </a>
-                )}
-                {meta.telegram && (
-                  <a href={meta.telegram.startsWith("http") ? meta.telegram : `https://t.me/${meta.telegram.replace(/^@/, "")}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-accent hover:underline">
-                    <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2a10 10 0 00-3.16 19.49c-.07-.7-.13-1.78-.04-2.55l.53-3.05-1.08-.21c-.88-.17-1.5-.74-1.5-1.5 0-.07.01-.14.02-.21A10 10 0 0012 2z" /></svg>
-                    Telegram
-                  </a>
-                )}
-                {meta.discord && (
-                  <a href={meta.discord} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-accent hover:underline">
-                    <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 24 24"><path d="M19.73 4.87A17.2 17.2 0 0012 0a17.2 17.2 0 00-7.73 4.87A16.06 16.06 0 002 14.3a13.6 13.6 0 004.11 2.07 11.1 11.1 0 001.22-1.86 9.6 9.6 0 01-1.93-.93l.46-.36a11.1 11.1 0 001.97.93 11.1 11.1 0 001.97-.93l.46.36a9.6 9.6 0 01-1.93.93 11.1 11.1 0 001.22 1.86A13.6 13.6 0 0022 14.3a16.06 16.06 0 00-2.27-9.43z" /></svg>
-                    Discord
-                  </a>
-                )}
-              </div>
-            )}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3 sm:justify-end">
           <div className="text-right">
             <div className="text-xs text-muted">Market cap.</div>
-            <div className="text-2xl font-bold text-foreground">{usdCompact(launch.marketCapUsd)}</div>
+            <PopNumber
+                value={usdCompact(launch.marketCapUsd)}
+                className="text-2xl font-bold text-foreground"
+              />
           </div>
           <div className="flex items-center gap-1.5">
             <button type="button"
@@ -882,6 +865,46 @@ export default function LaunchDetail({
             </div>
             <LivePriceChart points={priceHistory} />
           </div>
+
+          {/* About: the token's own description + links, from its launch metadata */}
+          {meta && (meta.description || meta.website || meta.telegram || meta.discord || meta.twitter) ? (
+            <div className="rounded-xl border border-border bg-card p-4 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold text-foreground">About ${launch.symbol}</h2>
+                <div className="flex items-center gap-3">
+                  {meta.website && (
+                    <a href={meta.website} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-accent hover:underline">
+                      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9 9 0 100-18 9 9 0 000 18zM3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 010 18" /></svg>
+                      Website
+                    </a>
+                  )}
+                  {meta.telegram && (
+                    <a href={meta.telegram.startsWith("http") || meta.telegram.startsWith("@") ? (meta.telegram.startsWith("@") ? `https://t.me/${meta.telegram.slice(1)}` : meta.telegram) : `https://t.me/${meta.telegram}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-accent hover:underline">
+                      <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2a10 10 0 00-3.16 19.49c-.07-.7-.13-1.78-.04-2.55l.53-3.05-1.08-.21c-.88-.17-1.5-.74-1.5-1.5 0-.07.01-.14.02-.21A10 10 0 0012 2z" /></svg>
+                      Telegram
+                    </a>
+                  )}
+                  {meta.twitter && (
+                    <a href={meta.twitter.startsWith("http") ? meta.twitter : `https://x.com/${meta.twitter.replace(/^@/, "")}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-accent hover:underline">
+                      <svg className="h-3 w-3" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                      </svg>
+                      X
+                    </a>
+                  )}
+                  {meta.discord && (
+                    <a href={meta.discord} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-accent hover:underline">
+                      <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 24 24"><path d="M19.73 4.87A17.2 17.2 0 0012 0a17.2 17.2 0 00-7.73 4.87A16.06 16.06 0 002 14.3a13.6 13.6 0 004.11 2.07 11.1 11.1 0 001.22-1.86 9.6 9.6 0 01-1.93-.93l.46-.36a11.1 11.1 0 001.97.93 11.1 11.1 0 001.97-.93l.46.36a9.6 9.6 0 01-1.93.93 11.1 11.1 0 001.22 1.86A13.6 13.6 0 0022 14.3a16.06 16.06 0 00-2.27-9.43z" /></svg>
+                      Discord
+                    </a>
+                  )}
+                </div>
+              </div>
+              {meta.description ? (
+                <p className="text-sm leading-relaxed text-secondary whitespace-pre-line">{meta.description}</p>
+              ) : null}
+            </div>
+          ) : null}
 
           {/* Trades */}
           <div>

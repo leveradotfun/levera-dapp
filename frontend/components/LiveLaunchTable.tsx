@@ -210,8 +210,30 @@ export default function LiveLaunchTable({
   return (
     // Horizontal scroll lives on this wrapper so a narrow viewport scrolls the table rather than
     // the whole page.
+    //
+    // table-fixed + an explicit colgroup: with auto layout, every cell's content re-measures the
+    // columns on every poll — "$5.29K" becoming "$1.23M" or an ATH bar growing reshuffles all
+    // the columns, so the green ATH bars and sparklines never line up between rows. Fixed widths
+    // pin every column; long values truncate instead of pushing the row around. The spare width
+    // spreads proportionally across all columns — COIN is capped so the name column doesn't
+    // swallow it all.
     <div className="overflow-x-auto rounded-xl border border-border">
-      <table className="w-full min-w-[1080px] text-sm">
+      <table className="w-full min-w-[1200px] table-fixed text-sm">
+        <colgroup>
+          <col className="w-12" />
+          <col className="w-56" />
+          <col className="w-14" />
+          <col className="w-24" />
+          <col className="w-28" />
+          <col className="w-28" />
+          <col className="w-14" />
+          <col className="w-14" />
+          <col className="w-20" />
+          <col className="w-14" />
+          <col className="w-16" />
+          <col className="w-16" />
+          <col className="w-16" />
+        </colgroup>
         <thead className="bg-surface/50">
           <tr className="border-b border-border">
             <Th label="#" align="left" />
@@ -286,32 +308,32 @@ export default function LiveLaunchTable({
                   </div>
                 </td>
                 <td className="px-3 py-3">
+                  {/* Logo only — the tooltip carries the exact symbol for anyone unsure */}
                   <span
-                    className="inline-flex items-center gap-1.5 text-sm text-secondary"
+                    className="inline-flex items-center"
                     title={l.graduated ? `AMM pair quoted in ${l.quoteSymbol}` : `Bonding-curve raise quoted in ${l.quoteSymbol}`}
                   >
-                    <TokenIcon symbol={displayQuoteSymbol(l.quoteSymbol)} size={16} />
-                    {displayQuoteSymbol(l.quoteSymbol)}
+                    <TokenIcon symbol={displayQuoteSymbol(l.quoteSymbol)} size={18} />
                   </span>
                 </td>
                 <td className="px-3 py-3">
                   <Sparkline prices={l.stats.spark} />
                 </td>
-                <td className="px-3 py-3 text-right">
-                  <div className="font-mono text-sm text-foreground">{compactUsd(mcap)}</div>
+                <td className="px-3 py-3 text-right whitespace-nowrap overflow-hidden">
+                  <div className="font-mono text-sm text-foreground truncate">{compactUsd(mcap)}</div>
                   <div className="font-mono text-[10px] text-muted"><PriceLabel value={l.priceUsd} /></div>
                 </td>
                 <td className="px-3 py-3 text-right">
                   <AthBar marketCapUsd={mcap} athMcapUsd={athMcap} />
                 </td>
-                <td className="px-3 py-3 text-right text-sm text-muted">{timeAgo(l.stats.createdAt)}</td>
-                <td className="px-3 py-3 text-right font-mono text-sm text-foreground">
+                <td className="px-3 py-3 text-right text-sm text-muted whitespace-nowrap overflow-hidden">{timeAgo(l.stats.createdAt)}</td>
+                <td className="px-3 py-3 text-right font-mono text-sm text-foreground whitespace-nowrap overflow-hidden">
                   {compactNum(l.stats.txnCount)}
                 </td>
-                <td className="px-3 py-3 text-right font-mono text-sm text-foreground">
+                <td className="px-3 py-3 text-right font-mono text-sm text-foreground whitespace-nowrap overflow-hidden">
                   {compactUsd(l.stats.volume24hUsd)}
                 </td>
-                <td className="px-3 py-3 text-right font-mono text-sm text-foreground">
+                <td className="px-3 py-3 text-right font-mono text-sm text-foreground whitespace-nowrap overflow-hidden">
                   {compactNum(l.stats.traderCount)}
                 </td>
                 <td className="px-3 py-3 text-right">

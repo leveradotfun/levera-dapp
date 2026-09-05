@@ -5,6 +5,7 @@ import { ethers } from "ethers";
 import { LaunchSummary, WAD } from "@/lib/launchpad";
 import { LycGlobal, fetchLycGlobal } from "@/lib/lyc";
 import { DeployedAddresses } from "@/lib/chain";
+import PopNumber from "@/components/PopNumber";
 
 /// Explore header stats, computed from the launch list the page already holds plus one LYC read.
 /// Kept cheap on purpose: the launches arrive on the page's own poll, and the Earn Pool figure is
@@ -61,7 +62,7 @@ export default function ExploreStats({
       {tiles.map((t) => (
         <div key={t.label} className="min-w-0 bg-card px-4 py-3">
           <div className="text-[10px] uppercase tracking-wide text-muted">{t.label}</div>
-          <div className="truncate font-mono text-base font-bold text-foreground lg:text-lg">{t.value}</div>
+          <PopNumber value={t.value} className="truncate font-mono text-base font-bold text-foreground lg:text-lg" />
           {t.sub ? <div className="truncate text-[10px] text-muted">{t.sub}</div> : null}
         </div>
       ))}

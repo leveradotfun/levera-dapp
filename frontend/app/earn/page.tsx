@@ -28,6 +28,7 @@ import { formatApr, useLycMetrics, NavSample } from "@/lib/lycMetrics";
 import SwapCard from "@/components/SwapCard";
 import MobileSwapSheet from "@/components/MobileSwapSheet";
 import { useIsDesktop } from "@/lib/useMediaQuery";
+import ShimmerText from "@/components/ShimmerText";
 
 type Tab = "position" | "transactions";
 
@@ -106,7 +107,7 @@ export default function EarnPage() {
   const navReturn = g ? ((Number(g.nav) / 1e18) - 1) * 100 : 0;
 
   if (!addresses) {
-    return <div className="p-10 text-center text-sm text-muted">Connecting to network...</div>;
+    return <div className="p-10 text-center text-sm text-muted"><ShimmerText>Connecting to network...</ShimmerText></div>;
   }
 
   // cbBTC is 8 decimals; the amount is parsed in the pay asset's own units.

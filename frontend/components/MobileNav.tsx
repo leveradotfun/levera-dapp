@@ -2,13 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { NAV_ITEMS } from "@/components/SideRail";
+import { NAV_ITEMS, navItemActive, navItemHref } from "@/components/SideRail";
+import { useAppState } from "@/lib/appState";
+import { useWallet } from "@/lib/wallet";
 
 /// Phone-only bottom navigation -- the vertical SideRail is hidden below md, so this bar carries
 /// the same destinations (plus the launch action) in the thumb zone instead. Fixed to the bottom
 /// edge with safe-area padding; page content clears it via the layout's bottom padding.
 export default function MobileNav() {
   const pathname = usePathname();
+  const { addresses } = useAppState();
+  const wallet = useWallet(addresses);
 
   return (
     <nav
@@ -17,7 +21,13 @@ export default function MobileNav() {
     >
       <div className="flex h-16 items-stretch">
         {NAV_ITEMS.slice(0, 2).map((item) => (
-          <NavLink key={item.href} href={item.href} label={item.label} icon={item.icon} active={pathname === item.href} />
+          <NavLink
+            key={item.href}
+            href={navItemHref(item, wallet.address)}
+            label={item.label}
+            icon={item.icon}
+            active={navItemActive(item, pathname, wallet.address)}
+          />
         ))}
 
         <Link
@@ -33,7 +43,13 @@ export default function MobileNav() {
         </Link>
 
         {NAV_ITEMS.slice(2).map((item) => (
-          <NavLink key={item.href} href={item.href} label={item.label} icon={item.icon} active={pathname === item.href} />
+          <NavLink
+            key={item.href}
+            href={navItemHref(item, wallet.address)}
+            label={item.label}
+            icon={item.icon}
+            active={navItemActive(item, pathname, wallet.address)}
+          />
         ))}
       </div>
     </nav>

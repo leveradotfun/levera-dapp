@@ -52,8 +52,15 @@ export async function POST(req: Request) {
       }
     }
     if (discord && !isValidUrl(discord)) return NextResponse.json({ error: "Discord must be a valid https:// URL" }, { status: 400 });
-    if (imageUrl && !isValidUrl(imageUrl) && !imageUrl.startsWith("/api/arweave/") && !imageUrl.startsWith("https://arweave.net/")) {
-      return NextResponse.json({ error: "imageUrl must be an https:// or arweave URL" }, { status: 400 });
+    if (
+      imageUrl &&
+      !isValidUrl(imageUrl) &&
+      !imageUrl.startsWith("/api/arweave/") &&
+      !imageUrl.startsWith("/api/ipfs/") &&
+      !imageUrl.startsWith("https://arweave.net/") &&
+      !/^ipfs:\/\//.test(imageUrl)
+    ) {
+      return NextResponse.json({ error: "imageUrl must be an https:// URL, an IPFS gateway/cid path, or an arweave URL" }, { status: 400 });
     }
     if (imageUrl && imageUrl.length > 500) return NextResponse.json({ error: "imageUrl too long" }, { status: 400 });
     if (website && website.length > 300) return NextResponse.json({ error: "website too long" }, { status: 400 });

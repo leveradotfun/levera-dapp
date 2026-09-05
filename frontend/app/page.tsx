@@ -6,6 +6,7 @@ import LiveLaunchGrid from "@/components/LiveLaunchGrid";
 import LiveLaunchTable from "@/components/LiveLaunchTable";
 import ExploreStats from "@/components/ExploreStats";
 import { SkeletonCoinCard } from "@/components/Skeleton";
+import ShimmerText from "@/components/ShimmerText";
 
 type FilterType = "All" | "New" | "Leveraged" | "Graduated";
 
@@ -33,7 +34,7 @@ export default function Home() {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
         <div className="text-center">
-          <div className="text-lg text-muted mb-2">Connecting to network...</div>
+          <div className="text-lg text-muted mb-2"><ShimmerText>Connecting to network...</ShimmerText></div>
           <div className="text-sm text-muted">Waiting for contract addresses</div>
         </div>
       </div>
@@ -47,7 +48,7 @@ export default function Home() {
         <p className="mt-0.5 text-sm text-muted">
           {launchesLoaded
             ? `${launches.length.toLocaleString("en-US")} coin${launches.length === 1 ? "" : "s"} live · one curve, every coin priced by its own liquidity`
-            : "Loading…"}
+            : <ShimmerText>Loading…</ShimmerText>}
         </p>
       </div>
 

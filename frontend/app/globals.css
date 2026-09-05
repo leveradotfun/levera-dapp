@@ -82,3 +82,116 @@ input, select, textarea, button {
 .animate-vibrate {
   animation: vibrate 0.4s ease-in-out infinite;
 }
+
+/* Trending tape below the top bar. The track holds two copies of the strip; sliding by -50%
+   lands on the duplicate, so the loop is seamless for any content width. Hover pauses it. */
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  animation: marquee 45s linear infinite;
+}
+
+/* ── Transitions.dev — Number pop-in ──────────────────────────────────────────────────────────
+   Headline numbers split into per-character .t-digit spans inside a .t-digit-group; when the
+   group mounts (value changed → React key change), each digit pops in with a blurred rise,
+   staggered left-to-right. Replay = remount the group (PopNumber does this via key).
+   Direction/speed are the --digit-* custom properties; per-digit delay is --stagger (an index),
+   which generalizes the guide's data-stagger="1"/"2" pairs to numbers of any length. */
+
+:root {
+  --digit-dur: 500ms;
+  --digit-distance: 8px;
+  --digit-stagger: 70ms;
+  --digit-blur: 2px;
+  --digit-ease: cubic-bezier(0.34, 1.45, 0.64, 1);
+  --digit-dir-x: 0;
+  --digit-dir-y: 1;
+}
+
+@keyframes t-digit-pop-in {
+  0% {
+    transform: translate(
+      calc(var(--digit-distance) * var(--digit-dir-x)),
+      calc(var(--digit-distance) * var(--digit-dir-y))
+    );
+    opacity: 0;
+    filter: blur(var(--digit-blur));
+  }
+  100% {
+    transform: translate(0, 0);
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+.t-digit-group {
+  display: inline-flex;
+  align-items: baseline;
+}
+.t-digit {
+  display: inline-block;
+  will-change: transform, opacity, filter;
+}
+.t-digit-group.is-animating .t-digit {
+  animation: t-digit-pop-in var(--digit-dur) var(--digit-ease) both;
+  animation-delay: calc(var(--digit-stagger) * var(--stagger, 0));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-digit-group .t-digit {
+    animation: none !important;
+  }
+}
+
+/* ── Transitions.dev — Shimmer text ───────────────────────────────────────────────────────────
+   Waiting-for-data text. The base string renders in --shimmer-base; a ::before duplicates it
+   via content: attr(data-text) and sweeps a highlight band across the same glyphs with
+   background-clip: text. Pure CSS, no class toggling. ShimmerText keeps data-text in sync. */
+
+:root {
+  --shimmer-dur: 2000ms;
+  --shimmer-base: #6e6e6e;
+  --shimmer-highlight: #ededed;
+  --shimmer-band: 400%;
+  --shimmer-ease: linear;
+}
+
+.t-shimmer {
+  position: relative;
+  display: inline-block;
+  color: var(--shimmer-base);
+}
+.t-shimmer::before {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 40%,
+    var(--shimmer-highlight) 50%,
+    transparent 60%,
+    transparent 100%
+  );
+  background-size: var(--shimmer-band) 100%;
+  background-repeat: no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: t-shimmer var(--shimmer-dur) var(--shimmer-ease) infinite;
+}
+@keyframes t-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-shimmer::before {
+    animation: none !important;
+  }
+}

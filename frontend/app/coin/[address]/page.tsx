@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useAppState } from "@/lib/appState";
 import { LaunchSummary, fetchLaunchSummary } from "@/lib/launchpad";
 import LaunchDetail from "@/components/LaunchDetail";
+import ShimmerText from "@/components/ShimmerText";
 
 /// A real, shareable, deep-linkable URL per coin -- fetched directly by address rather than only
 /// looked up in the polled `launches` list, so hitting /coin/0x... straight from a link (or a
@@ -54,7 +55,7 @@ export default function CoinPage() {
   }
 
   if (!launch) {
-    return <div className="p-10 text-center text-sm text-muted">Loading coin...</div>;
+    return <div className="p-10 text-center text-sm text-muted"><ShimmerText>Loading coin...</ShimmerText></div>;
   }
 
   return (

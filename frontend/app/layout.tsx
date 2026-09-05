@@ -5,6 +5,7 @@ import { AppStateProvider } from "@/lib/appState";
 import SiteHeader from "@/components/SiteHeader";
 import SideRail from "@/components/SideRail";
 import MobileNav from "@/components/MobileNav";
+import TrendingMarquee from "@/components/TrendingMarquee";
 import GlobalModals from "@/components/GlobalModals";
 import ToastHost from "@/components/ToastHost";
 import ProtocolKeeper from "@/components/ProtocolKeeper";
@@ -46,6 +47,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   bar (below md) and the swap card's fixed trade bar (below lg). */}
               <div className="flex min-w-0 flex-1 flex-col">
                 <SiteHeader />
+                <TrendingMarquee />
                 <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-4 pb-28 lg:pb-4">{children}</main>
               </div>
             </div>

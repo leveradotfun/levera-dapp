@@ -5,9 +5,10 @@ import { loadXProfile } from "./xAuth";
 
 const STORAGE_PREFIX = "launchpad-frontend:x-profile:";
 
-/// Everything the UI needs to label a wallet that connected X: the handle and the avatar URL
-/// (empty when X never returned one). Both come straight from the stored/served XProfile.
-export type XIdentity = { username: string; avatar: string };
+/// Everything the UI needs to label a wallet that connected X: the handle, the display name and
+/// the avatar URL (the latter two empty when X never returned one). All come straight from the
+/// stored/served XProfile.
+export type XIdentity = { username: string; avatar: string; name: string };
 
 export type HandleMap = Map<string, XIdentity>; // address lowercase -> identity
 
@@ -22,8 +23,9 @@ function scanLocalHandles(): HandleMap {
       try {
         const raw = window.localStorage.getItem(k);
         if (!raw) continue;
-        const parsed = JSON.parse(raw) as { username?: string; profileImageUrl?: string };
-        if (parsed?.username) out.set(addr, { username: parsed.username, avatar: parsed.profileImageUrl ?? "" });
+        const parsed = JSON.parse(raw) as { username?: string; name?: string; profileImageUrl?: string };
+        if (parsed?.username)
+          out.set(addr, { username: parsed.username, name: parsed.name ?? parsed.username, avatar: parsed.profileImageUrl ?? "" });
       } catch {
         // ignore malformed entry
       }
@@ -40,11 +42,12 @@ async function fetchRemoteHandles(): Promise<HandleMap> {
     const res = await fetch("/api/x-profiles", { cache: "no-store" });
     if (!res.ok) return out;
     const json = (await res.json()) as {
-      profiles?: Record<string, { username?: string; profileImageUrl?: string }>;
+      profiles?: Record<string, { username?: string; name?: string; profileImageUrl?: string }>;
     };
     const profiles = json.profiles ?? {};
     for (const [addr, p] of Object.entries(profiles)) {
-      if (p?.username) out.set(addr.toLowerCase(), { username: p.username, avatar: p.profileImageUrl ?? "" });
+      if (p?.username)
+        out.set(addr.toLowerCase(), { username: p.username, name: p.name ?? p.username, avatar: p.profileImageUrl ?? "" });
     }
   } catch {
     // network hiccup -- fallback to local only

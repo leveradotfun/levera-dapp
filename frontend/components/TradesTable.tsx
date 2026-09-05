@@ -219,6 +219,7 @@ export default function TradesTable({
                       address={t.account}
                       identity={xHandles.get(t.account.toLowerCase())}
                       linkHandle
+                      isMe={!!userAddress && t.account.toLowerCase() === userAddress.toLowerCase()}
                     />
                   )}
                 </td>
