@@ -677,3 +677,26 @@ export async function routeFillSummary(launch: string): Promise<{
     fills: Number(rows[0]?.fills ?? 0),
   };
 }
+
+/// Which of `keys` are ALREADY stored, as "txHash:logIndex" strings.
+///
+/// Exists so /api/route-fills can skip chain verification for fills it already has. The insert
+/// dedupes on `(tx_hash, log_index)` anyway, but that fires in Postgres AFTER every fill has been
+/// re-derived from the chain -- so re-POSTing a known batch cost a receipt fetch per fill and
+/// wrote nothing. Since that endpoint is unauthenticated, "free for the poster, expensive for us"
+/// is the wrong shape: it turns one request into hundreds of upstream RPC calls. Checking first
+/// makes a replay cost a single indexed query.
+export async function existingRouteFillKeys(
+  keys: Array<{ txHash: string; logIndex: number }>,
+): Promise<Set<string>> {
+  if (keys.length === 0) return new Set();
+  await ensureSchema();
+  // Filter on tx_hash alone (one indexed IN-list) and match the log index in JS: a batch spans
+  // few distinct transactions, and this avoids composite-array binding, which pg does not handle
+  // cleanly.
+  const rows = await query<{ tx_hash: string; log_index: number }>(
+    `SELECT tx_hash, log_index FROM route_fills WHERE tx_hash = ANY($1::text[])`,
+    [Array.from(new Set(keys.map((k) => k.txHash.toLowerCase())))],
+  );
+  return new Set(rows.map((r) => `${r.tx_hash}:${r.log_index}`));
+}

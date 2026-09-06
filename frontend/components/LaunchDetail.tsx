@@ -97,26 +97,44 @@ export default function LaunchDetail({
   onRefresh: () => void;
 }) {
   const priceHistory = usePriceHistory(launch.address, addresses?.oracle);
+  const { trades, loading: tradesLoading, refresh } = useTradeHistory(launch.address, addresses);
   // Route P&L: what this coin's junior side has paid (subsidy) / earned (profit) through the
   // pool's posted de-risk and re-lev offers. Sourced from the SellRouteFilled/BuyRouteFilled
   // events the scanner relays into route_fills -- realised, oracle-priced at fill time.
   const [routePnl, setRoutePnl] = useState<{ profitUsd: number; subsidyUsd: number; netUsd: number; fills: number } | null>(null);
+  // Polled, deliberately NOT keyed on the trade log. The scanner writes route fills to
+  // /api/route-fills on its own cycle, independently of this component, so a one-shot fetch on
+  // mount showed nothing on a first visit and then sat stale. Keying it on `trades.length` looks
+  // like a fix but is not one: route fills are not trades. The scanner keeps them in a separate
+  // array and never appends them to the trade log (they carry a filler rather than a trader and
+  // no token amount, so mixing them in would fabricate volume). A pool de-risking through a quiet
+  // stretch produces fills with NO trades -- exactly the subsidy case this panel exists to
+  // surface, and exactly when that dependency would never fire. Polling does not care what
+  // triggered the write: one indexed aggregate every 30s, matching the scanner's own cadence.
   useEffect(() => {
     if (!launch.address) return;
-    fetch(`/api/route-fills?launch=${encodeURIComponent(launch.address)}`)
-      .then((r) => r.json())
-      .then((j: { profitUsd?: string; subsidyUsd?: string; netUsd?: string; fills?: number } | null) => {
-        if (!j || j.fills === undefined) return;
-        setRoutePnl({
-          profitUsd: Number(j.profitUsd ?? 0) / 1e18,
-          subsidyUsd: Math.abs(Number(j.subsidyUsd ?? 0)) / 1e18,
-          netUsd: Number(j.netUsd ?? 0) / 1e18,
-          fills: j.fills ?? 0,
-        });
-      })
-      .catch(() => {});
+    let stopped = false;
+    const load = () => {
+      fetch(`/api/route-fills?launch=${encodeURIComponent(launch.address)}`)
+        .then((r) => r.json())
+        .then((j: { profitUsd?: string; subsidyUsd?: string; netUsd?: string; fills?: number } | null) => {
+          if (stopped || !j || j.fills === undefined) return;
+          setRoutePnl({
+            profitUsd: Number(j.profitUsd ?? 0) / 1e18,
+            subsidyUsd: Math.abs(Number(j.subsidyUsd ?? 0)) / 1e18,
+            netUsd: Number(j.netUsd ?? 0) / 1e18,
+            fills: j.fills ?? 0,
+          });
+        })
+        .catch(() => {});
+    };
+    load();
+    const id = setInterval(load, 30_000);
+    return () => {
+      stopped = true;
+      clearInterval(id);
+    };
   }, [launch.address]);
-  const { trades, loading: tradesLoading, refresh } = useTradeHistory(launch.address, addresses);
   // The creator's connected X identity, so the byline shows name + picture when known.
   const xHandles = useXHandles();
   // Real holder count: everyone who ever received a transfer of this coin and still holds a
