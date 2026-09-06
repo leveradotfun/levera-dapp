@@ -502,6 +502,46 @@ async function doCreateLaunch(addresses: DeployedAddresses, params: CreateLaunch
     return { launchAddress: launch };
   });
 
+  // EVERYTHING below is analytics for `logLaunch`, and the coin already exists -- so none of it
+  // may throw. It used to: the reads run against `getProvider()`, which is a different node from
+  // the one the wallet just mined against, and a load-balanced RPC's replicas lag (measured on
+  // this deployment: 1-23 blocks, varying by the second). Read a clone that fresh from a lagging
+  // replica and `eth_call` returns `0x`, which ethers raises as "could not decode result data".
+  // That rejection propagated out of `createLaunch`, so the caller lost the launch address it had
+  // already earned -- the coin was on-chain, but the UI reported failure AND skipped the
+  // metadata save, leaving it permanently imageless. A stats line must never be able to do that.
+  try {
+    await logLaunchStats(launchAddress, buyIn);
+  } catch {
+    // Analytics only. The coin exists; that is what the caller is waiting on.
+  }
+  return launchAddress;
+}
+
+/// Waits for `address` to have code on the READ provider before touching it.
+///
+/// The wallet mines against its own node; we read from ours. Immediately after a create, ours may
+/// not have the block yet -- and a call to an address with no code returns `0x`, which decodes as
+/// a BAD_DATA throw rather than anything catchable by shape. Polling `getCode` is the honest way
+/// to ask "can I read this yet"; bounded, because the answer may legitimately stay no.
+async function waitForCode(address: string, timeoutMs = 12_000): Promise<boolean> {
+  const provider = getProvider();
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      if ((await provider.getCode(address)) !== "0x") return true;
+    } catch {
+      // Treat a failed probe as "not yet" and let the deadline decide.
+    }
+    if (Date.now() >= deadline) return false;
+    await new Promise((r) => setTimeout(r, 750));
+  }
+}
+
+/// The launch's opening curve numbers, recorded for the session log. Split out of
+/// `doCreateLaunch` so its failure modes are contained: see the try/catch at the call site.
+async function logLaunchStats(launchAddress: string, buyIn: bigint): Promise<void> {
+  if (!(await waitForCode(launchAddress))) return; // replica still behind; skip the stats, keep the coin
   const launch = getLaunch(launchAddress, getProvider());
   const target: bigint = await launch.targetRaiseEth();
   const virtualTokens0 = (CURVE_SELLABLE_WAD * CURVE_SHAPE_M_WAD) / WAD;
@@ -525,8 +565,6 @@ async function doCreateLaunch(addresses: DeployedAddresses, params: CreateLaunch
     creatorBuyEth: ethers.formatUnits(buyEth, 18),
     creatorBuyImpactPct: impact.toFixed(4),
   }).catch(() => {});
-
-  return launchAddress;
 }
 
 // ---- trading ----
