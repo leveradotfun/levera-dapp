@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { TxLink } from "./ExplorerLink";
 import TraderIdentity from "./TraderIdentity";
 import { useXHandles } from "@/lib/xHandles";
@@ -91,6 +92,10 @@ export default function TradesTable({
   const [page, setPage] = useState(0);
   const [accountFilter, setAccountFilter] = useState<FilterType>(loadFilter);
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+  // The menu is portaled to <body> with fixed coordinates: its anchor sits inside a card with
+  // overflow-hidden, which used to clip short tables' dropdowns mid-list.
+  const filterBtnRef = useRef<HTMLButtonElement>(null);
+  const [filterPos, setFilterPos] = useState<{ top: number; left: number } | null>(null);
   const xHandles = useXHandles();
 
   useEffect(() => {
@@ -100,6 +105,30 @@ export default function TradesTable({
       // private mode
     }
   }, [accountFilter]);
+
+  // The portaled menu no longer moves with its anchor, so any scroll or resize closes it -- the
+  // same trade-off every fixed-position menu makes, and invisible here (the menu is 3 items).
+  useEffect(() => {
+    if (!showFilterDropdown) return;
+    const close = () => setShowFilterDropdown(false);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [showFilterDropdown]);
+
+  function toggleFilterDropdown() {
+    const r = filterBtnRef.current?.getBoundingClientRect();
+    if (r) setFilterPos({ top: r.bottom + 4, left: r.left });
+    setShowFilterDropdown((o) => !o);
+  }
 
   // Apply account filter
   const filteredTrades = trades.filter((t) => {
@@ -129,7 +158,8 @@ export default function TradesTable({
         <div className="relative">
           <button
             type="button"
-            onClick={() => setShowFilterDropdown(!showFilterDropdown)}
+            ref={filterBtnRef}
+            onClick={toggleFilterDropdown}
             className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium text-foreground hover:border-accent transition-colors"
           >
             {filterLabel}
@@ -138,36 +168,43 @@ export default function TradesTable({
             </svg>
           </button>
 
-          {showFilterDropdown && (
-            <div className="absolute top-full left-0 mt-1 w-40 rounded-lg border border-border bg-card shadow-lg z-10">
-              {([
-                { value: "all", label: "All trades" },
-                { value: "creator", label: "Creator" },
-                { value: "you", label: "You" },
-                { value: "rebalance", label: "Rebalances" },
-              ] as const).map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => {
-                    setAccountFilter(option.value);
-                    setShowFilterDropdown(false);
-                    setPage(0);
-                  }}
-                  className={`w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-surface transition-colors ${
-                    accountFilter === option.value ? "text-foreground" : "text-muted"
-                  }`}
-                >
-                  {option.label}
-                  {accountFilter === option.value && (
-                    <svg className="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
+          {showFilterDropdown &&
+            filterPos &&
+            createPortal(
+              <div
+                className="fixed z-50 w-40 rounded-lg border border-border bg-card py-1 shadow-lg"
+                style={{ top: filterPos.top, left: filterPos.left }}
+                role="menu"
+              >
+                {([
+                  { value: "all", label: "All trades" },
+                  { value: "creator", label: "Creator" },
+                  { value: "you", label: "You" },
+                  { value: "rebalance", label: "Rebalances" },
+                ] as const).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => {
+                      setAccountFilter(option.value);
+                      setShowFilterDropdown(false);
+                      setPage(0);
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-surface transition-colors ${
+                      accountFilter === option.value ? "text-foreground" : "text-muted"
+                    }`}
+                  >
+                    {option.label}
+                    {accountFilter === option.value && (
+                      <svg className="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
+                ))}
+              </div>,
+              document.body,
+            )}
         </div>
 
         {onRefresh && (

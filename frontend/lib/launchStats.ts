@@ -311,7 +311,7 @@ async function fetchLaunchStatsUncoordinated(
         const [
           curveBuys, curveSells, poolBuys, poolSells, protecteds,
           relevereds, seniorReleaseds, paireds, reserveRebalances, seniorNetteds,
-          earnNettedOut, earnNettedIn,
+          earnNettedOut, earnNettedIn, sellRouteFills, buyRouteFills,
         ] = await Promise.all([
           launch.queryFilter(launch.filters.CurveBuy(), start, to),
           launch.queryFilter(launch.filters.CurveSell(), start, to),
@@ -323,6 +323,8 @@ async function fetchLaunchStatsUncoordinated(
           launch.queryFilter(launch.filters.Paired(), start, to),
           launch.queryFilter(launch.filters.RebalancedToReserve(), start, to),
           launch.queryFilter(launch.filters.SeniorNetted(), start, to),
+          launch.queryFilter(launch.filters.SellRouteFilled(), start, to),
+          launch.queryFilter(launch.filters.BuyRouteFilled(), start, to),
           // Earn-side netting: this launch as the SOURCE (senior lent away) and as the TARGET.
           earn.queryFilter(earn.filters.SeniorNetted(launchAddress, null), start, to),
           earn.queryFilter(earn.filters.SeniorNetted(null, launchAddress), start, to),
@@ -330,8 +332,9 @@ async function fetchLaunchStatsUncoordinated(
         all.push(
           ...curveBuys, ...curveSells, ...poolBuys, ...poolSells, ...protecteds,
           ...relevereds, ...seniorReleaseds, ...paireds, ...reserveRebalances, ...seniorNetteds,
-          ...earnNettedOut, ...earnNettedIn,
+          ...sellRouteFills, ...buyRouteFills, ...earnNettedOut, ...earnNettedIn,
         );
+
       }
 
       const allEvents = all.filter((e): e is ethers.EventLog => "args" in e);
@@ -340,6 +343,7 @@ async function fetchLaunchStatsUncoordinated(
       allEvents.sort((a, b) => a.blockNumber - b.blockNumber || a.index - b.index);
 
       const times = await blockTimes(allEvents.map((e) => e.blockNumber));
+
 
       for (const e of allEvents) {
         const ts = times.get(e.blockNumber);
@@ -503,6 +507,39 @@ async function fetchLaunchStatsUncoordinated(
           rebalanceType,
         });
       }
+      // Route fills feed the /api/route-fills P&L ledger, NOT the trade feed: they have a
+      // filler (not a trader), no token amount, and their price is the pool's own posted
+      // offer -- mixing them into the trade series would fabricate volume. Dedup is the
+      // table's unique (tx, log_index) key, so reposts are harmless.
+      const routeFills: {
+        side: "sell" | "buy"; filler: string; usdIn: string; ethOut: string;
+        priceWad: string; pnlUsd: string; txHash: string; logIndex: number; t: number;
+      }[] = [];
+      for (const e of allEvents) {
+        const name = e.fragment?.name;
+        if (name !== "SellRouteFilled" && name !== "BuyRouteFilled") continue;
+        const ts = times.get(e.blockNumber);
+        if (ts === undefined || !e.args) continue;
+        routeFills.push({
+          side: name === "SellRouteFilled" ? "sell" : "buy",
+          filler: String(e.args[0]),
+          usdIn: String(e.args[1]),
+          ethOut: String(e.args[2]),
+          priceWad: String(e.args[3]),
+          pnlUsd: String(e.args[4]),
+          txHash: e.transactionHash,
+          logIndex: e.index,
+          t: ts,
+        });
+      }
+      if (routeFills.length > 0) {
+        void fetch("/api/route-fills", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ launch: launchAddress, fills: routeFills }),
+        }).catch(() => {});
+      }
+
       cached.nextFromBlock = head + 1;
       launchCache.set(key, cached);
     } catch {

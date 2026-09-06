@@ -605,3 +605,75 @@ export async function listTrending(cutoffMs: number, limit = 24): Promise<Trendi
     };
   });
 }
+
+// ---- route fills: the pool's de-risk/re-lev mechanism, profit vs subsidy -------------------
+// Ingested from Launch's SellRouteFilled/BuyRouteFilled events. Profit and subsidy are summed
+// SEPARATELY downstream: a net route P&L of zero is ambiguous between "no activity" and "a
+// stretched book paying heavily to de-risk", and the second is the risk signal.
+
+export type RouteFillInput = {
+  launch: string;
+  collateral: string;
+  side: "sell" | "buy";
+  filler: string;
+  usdIn: string;
+  ethOut: string;
+  priceWad: string;
+  pnlUsd: string;
+  txHash: string;
+  logIndex: number;
+  t: number;
+};
+
+export async function insertRouteFills(rows: RouteFillInput[]): Promise<number> {
+  if (rows.length === 0) return 0;
+  await ensureSchema();
+  let written = 0;
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    for (const r of rows) {
+      const res = await client.query(
+        `INSERT INTO route_fills
+           (launch, collateral, side, filler, usd_in, eth_out, price_wad, pnl_usd, tx_hash, log_index, t)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         ON CONFLICT (tx_hash, log_index) DO NOTHING`,
+        [norm(r.launch), norm(r.collateral), r.side, norm(r.filler), r.usdIn, r.ethOut,
+         r.priceWad, r.pnlUsd, r.txHash, r.logIndex, r.t],
+      );
+      written += res.rowCount ?? 0;
+    }
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
+  return written;
+}
+
+export async function routeFillSummary(launch: string): Promise<{
+  profitUsd: string;
+  subsidyUsd: string;
+  netUsd: string;
+  fills: number;
+}> {
+  await ensureSchema();
+  const rows = await query<{ profit: string; subsidy: string; fills: string }>(
+    `SELECT
+       COALESCE(sum(CASE WHEN pnl_usd::numeric > 0 THEN pnl_usd::numeric ELSE 0 END), 0)::text AS profit,
+       COALESCE(sum(CASE WHEN pnl_usd::numeric < 0 THEN pnl_usd::numeric ELSE 0 END), 0)::text AS subsidy,
+       count(*)::text AS fills
+     FROM route_fills WHERE launch = $1`,
+    [norm(launch)],
+  );
+  const profit = rows[0]?.profit ?? "0";
+  const subsidy = rows[0]?.subsidy ?? "0";
+  return {
+    profitUsd: profit,
+    subsidyUsd: subsidy,
+    netUsd: (Number(profit) + Number(subsidy)).toString(),
+    fills: Number(rows[0]?.fills ?? 0),
+  };
+}

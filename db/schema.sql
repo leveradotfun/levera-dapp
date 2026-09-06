@@ -133,3 +133,23 @@ CREATE TABLE IF NOT EXISTS follows (
 CREATE INDEX IF NOT EXISTS follows_target   ON follows (target);
 CREATE INDEX IF NOT EXISTS follows_follower ON follows (follower);
 
+-- Route fills: the pool's de-risk/re-lev mechanism settling against its posted offers
+-- (SellRouteFilled / BuyRouteFilled). Profit and subsidy are stored SEPARATELY because a net
+-- route P&L of zero means opposite things ("quiet" vs "stretched book paying heavily to
+-- de-risk"), and the split is the number that says which.
+CREATE TABLE IF NOT EXISTS route_fills (
+  id          bigserial PRIMARY KEY,
+  launch      text NOT NULL,
+  collateral  text NOT NULL DEFAULT '',
+  side        text NOT NULL CHECK (side IN ('sell', 'buy')),
+  filler      text NOT NULL DEFAULT '',
+  usd_in      text NOT NULL DEFAULT '0',
+  eth_out     text NOT NULL DEFAULT '0',
+  price_wad   text NOT NULL DEFAULT '0',
+  pnl_usd     text NOT NULL DEFAULT '0',
+  tx_hash     text NOT NULL DEFAULT '',
+  log_index   integer NOT NULL,
+  t           bigint NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS route_fills_unique ON route_fills (tx_hash, log_index);
+CREATE INDEX IF NOT EXISTS route_fills_launch ON route_fills (launch, t DESC);

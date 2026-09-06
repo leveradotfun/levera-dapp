@@ -194,6 +194,30 @@
   },
   {
     "type": "function",
+    "name": "acquireSeniorFor",
+    "inputs": [
+      {
+        "name": "usdAmount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "minOut",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "ethBought",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "addCollateral",
     "inputs": [
       {
@@ -1057,6 +1081,24 @@
   },
   {
     "type": "function",
+    "name": "moveVaultCredit",
+    "inputs": [
+      {
+        "name": "to",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "moveVaultToReserve",
     "inputs": [
       {
@@ -1224,6 +1266,25 @@
   },
   {
     "type": "function",
+    "name": "poolVaultEth",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "pools",
     "inputs": [
       {
@@ -1363,6 +1424,42 @@
   },
   {
     "type": "function",
+    "name": "releaseVaultTo",
+    "inputs": [
+      {
+        "name": "to",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "releaseVaultToReserve",
+    "inputs": [
+      {
+        "name": "to",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "routingSurchargeWad",
     "inputs": [
       {
@@ -1379,6 +1476,30 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "sellVaultForUsd",
+    "inputs": [
+      {
+        "name": "ethAmount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "minUsdOut",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "usdOut",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -2428,6 +2549,26 @@
   },
   {
     "type": "error",
+    "name": "AmountExceedsCredit",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AtCap",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BadClone",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "CollateralMismatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ERC20InsufficientAllowance",
     "inputs": [
       {
@@ -2514,6 +2655,21 @@
   },
   {
     "type": "error",
+    "name": "Empty",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InsufficientBalance",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotGuardian",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NotListed",
     "inputs": []
   },
@@ -2537,6 +2693,11 @@
         "internalType": "address"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "ZeroAddress",
+    "inputs": []
   },
   {
     "type": "error",

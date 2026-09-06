@@ -97,6 +97,25 @@ export default function LaunchDetail({
   onRefresh: () => void;
 }) {
   const priceHistory = usePriceHistory(launch.address, addresses?.oracle);
+  // Route P&L: what this coin's junior side has paid (subsidy) / earned (profit) through the
+  // pool's posted de-risk and re-lev offers. Sourced from the SellRouteFilled/BuyRouteFilled
+  // events the scanner relays into route_fills -- realised, oracle-priced at fill time.
+  const [routePnl, setRoutePnl] = useState<{ profitUsd: number; subsidyUsd: number; netUsd: number; fills: number } | null>(null);
+  useEffect(() => {
+    if (!launch.address) return;
+    fetch(`/api/route-fills?launch=${encodeURIComponent(launch.address)}`)
+      .then((r) => r.json())
+      .then((j: { profitUsd?: string; subsidyUsd?: string; netUsd?: string; fills?: number } | null) => {
+        if (!j || j.fills === undefined) return;
+        setRoutePnl({
+          profitUsd: Number(j.profitUsd ?? 0) / 1e18,
+          subsidyUsd: Math.abs(Number(j.subsidyUsd ?? 0)) / 1e18,
+          netUsd: Number(j.netUsd ?? 0) / 1e18,
+          fills: j.fills ?? 0,
+        });
+      })
+      .catch(() => {});
+  }, [launch.address]);
   const { trades, loading: tradesLoading, refresh } = useTradeHistory(launch.address, addresses);
   // The creator's connected X identity, so the byline shows name + picture when known.
   const xHandles = useXHandles();
@@ -718,6 +737,12 @@ export default function LaunchDetail({
         ))}
       </div>
 
+      {routePnl && routePnl.fills > 0 && (
+        <p className="text-[11px] text-muted text-center" title="Realised route P&L, oracle-priced at fill time. It lands on the junior side, not on vLYC.">
+          Route fills: {routePnl.fills} — earned {usdCompact(BigInt(Math.round(routePnl.profitUsd * 1e18)))} above spot,
+          paid {usdCompact(BigInt(Math.round(routePnl.subsidyUsd * 1e18)))} to de-risk (junior-side, not vLYC yield).
+        </p>
+      )}
       <p className="text-[11px] text-muted text-center">
         1.00% fee — 0.50% creator, up to 0.05% to vLYC (scaled by how paired this pool is),
         the rest to protocol.

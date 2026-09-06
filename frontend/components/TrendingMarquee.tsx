@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ethers } from "ethers";
 import { getLaunch, getProvider } from "@/lib/launchpad";
+import { fetchLaunchStats } from "@/lib/launchStats";
+import { fetchLaunchCollateralPriceUsd } from "@/lib/launchpad";
 
 /// Trending ticker below the top bar: the last 24h's most-traded coins, each with its 24h price
 /// change, ranked by USD volume. Data comes from `/api/trending` (the `trades` table every swap
@@ -13,7 +15,7 @@ type Row = {
   launch: string;
   volume24h: number;
   priceUsd: number;
-  change24h: number;
+  change24h: number | null;
   imageUrl: string | null;
 };
 
@@ -27,7 +29,8 @@ function hueFor(address: string): number {
   return Math.abs(h) % 360;
 }
 
-function Change({ pct }: { pct: number }) {
+function Change({ pct }: { pct: number | null }) {
+  if (pct === null) return <span className="font-mono text-xs text-muted">—</span>;
   const up = pct >= 0;
   return (
     <span className={`font-mono text-xs font-semibold ${up ? "text-emerald-400" : "text-red-400"}`}>
@@ -73,7 +76,26 @@ export default function TrendingMarquee() {
             return { ...r, symbol };
           }),
         );
-        if (alive) setRows(enriched);
+        // The trade-table change (first vs last recorded trade in the window) went stale with
+        // thin ledgers -- a coin whose only trades printed at the same price read 0.0% while its
+        // live spot moved double digits. Re-mark each row's change from the on-chain event scan
+        // (the same source the Explore table uses) and rank by it, so the tape leads with the
+        // top coin by live percentage increase.
+        const marked = await Promise.all(
+          enriched.map(async (r) => {
+            try {
+              const price = await fetchLaunchCollateralPriceUsd(r.launch);
+              const stats = await fetchLaunchStats(r.launch, price, null);
+              return { ...r, change24h: stats.change24h, volume24h: stats.volume24hUsd };
+            } catch {
+              return r; // scan failed -- keep the recorded figures
+            }
+          }),
+        );
+        const sorted = [...marked].sort(
+          (a, b) => (b.change24h ?? -Infinity) - (a.change24h ?? -Infinity),
+        );
+        if (alive) setRows(sorted);
       } catch {
         // endpoint unreachable — bar simply stays hidden
       }
@@ -94,7 +116,6 @@ export default function TrendingMarquee() {
   const strip = (ariaHidden: boolean) => (
     <div className="flex w-max shrink-0 items-center gap-6 pr-6" aria-hidden={ariaHidden}>
       {rows.map((r, i) => {
-        const up = r.change24h >= 0;
         return (
           <Link
             key={r.launch}
