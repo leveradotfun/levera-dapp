@@ -282,7 +282,13 @@ async function main() {
     network: "robinhood-testnet",
     chainId: 46630,
     deployBlock,
-    rpcUrl: TESTNET_RPC_URL,
+    // The PUBLIC endpoint, deliberately NOT `TESTNET_RPC_URL`. This record is served verbatim to
+    // every browser by frontend/app/api/deployment/route.ts, and TESTNET_RPC_URL may carry a
+    // provider key (Goldsky Edge takes `?key=`) -- writing it here published that key to anyone
+    // who loaded the app, which is the exact leak the same-origin /api/rpc/testnet proxy exists
+    // to prevent. Ops scripts take their endpoint from testnet/.env; this field is a public hint
+    // and nothing more.
+    rpcUrl: "https://rpc.testnet.chain.robinhood.com",
     explorer: "https://explorer.testnet.chain.robinhood.com",
     feed: ethOracleAddress, // what the /ui console's oracle panel expects: the price the app reads
     oracleEth: ethOracleAddress,
