@@ -1,6 +1,7 @@
 import { ethers } from "ethers";
 import { getProvider } from "./signers";
 import { getLaunch } from "./launchpad";
+import { EarnPoolAbi } from "./artifacts/EarnPool";
 
 const WAD = 10n ** 18n;
 
@@ -292,17 +293,25 @@ async function fetchLaunchStatsUncoordinated(
   if (cached.nextFromBlock <= head) {
     try {
       const from = cached.nextFromBlock;
-      // Scanned in chunks of 10k blocks, all ten filters per chunk in parallel. A single query
+      // Netting performed THROUGH the earn pool emits SeniorNetted(from, to, usdMoved) on the
+      // EARN contract, not on this launch -- a launch-address query never sees it, which is why
+      // earn-side netting used to vanish from the trade history while pairing showed. Query the
+      // earn pool too, filtered to this launch as either side.
+      const earnAddress: string = await launch.earn();
+      const earn = new ethers.Contract(earnAddress, EarnPoolAbi as ethers.InterfaceAbi, getProvider());
+      const launchLower = launchAddress.toLowerCase();
+      // Scanned in chunks of 10k blocks, all twelve filters per chunk in parallel. A single query
       // over the whole range fails once the deployment is more than ~40k blocks old -- the public
       // RPC rejects wide getLogs ranges -- and that failure was swallowed into an EMPTY trade log,
       // which is why fresh browsers on levera.fun saw "No trades yet" for coins that had trades.
-      // Steady state (one chunk) costs the same ten requests as before.
+      // Steady state (one chunk) costs the same twelve requests as before.
       const all: (ethers.EventLog | ethers.Log)[] = [];
       for (let start = from; start <= head; start += 10_000) {
         const to = Math.min(start + 9_999, head);
         const [
           curveBuys, curveSells, poolBuys, poolSells, protecteds,
           relevereds, seniorReleaseds, paireds, reserveRebalances, seniorNetteds,
+          earnNettedOut, earnNettedIn,
         ] = await Promise.all([
           launch.queryFilter(launch.filters.CurveBuy(), start, to),
           launch.queryFilter(launch.filters.CurveSell(), start, to),
@@ -314,10 +323,14 @@ async function fetchLaunchStatsUncoordinated(
           launch.queryFilter(launch.filters.Paired(), start, to),
           launch.queryFilter(launch.filters.RebalancedToReserve(), start, to),
           launch.queryFilter(launch.filters.SeniorNetted(), start, to),
+          // Earn-side netting: this launch as the SOURCE (senior lent away) and as the TARGET.
+          earn.queryFilter(earn.filters.SeniorNetted(launchAddress, null), start, to),
+          earn.queryFilter(earn.filters.SeniorNetted(null, launchAddress), start, to),
         ]);
         all.push(
           ...curveBuys, ...curveSells, ...poolBuys, ...poolSells, ...protecteds,
           ...relevereds, ...seniorReleaseds, ...paireds, ...reserveRebalances, ...seniorNetteds,
+          ...earnNettedOut, ...earnNettedIn,
         );
       }
 
@@ -414,13 +427,27 @@ async function fetchLaunchStatsUncoordinated(
             break;
           }
           case "SeniorNetted": {
-            skimmedUsd = Number(e.args.usdMoved as bigint) / 1e18;
-            newLoopLev = Number(e.args.leverageAfter as bigint) / 1e18;
-            collateral = e.args.ethMoved as bigint;
-            tokens = 0n;
-            isBuy = false;
-            type = "rebalance";
-            rebalanceType = "netted";
+            // Two signatures share this name: Launch's own (releaseToPool -- toPool, usdMoved,
+            // ethMoved, leverageAfter) and EarnPool's netSeniorBetween (from, to, usdMoved),
+            // which fires on the earn address for pool-to-pool netting. Distinguish by shape:
+            // only the earn version carries `from`.
+            if (e.args.from !== undefined) {
+              const incoming = (e.args.from as string).toLowerCase() !== launchLower;
+              skimmedUsd = Number(e.args.usdMoved as bigint) / 1e18;
+              collateral = 0n; // the earn event carries no ETH amount
+              tokens = 0n;
+              isBuy = incoming; // senior arriving here is the buy-shaped side of the move
+              type = "rebalance";
+              rebalanceType = "netted";
+            } else {
+              skimmedUsd = Number(e.args.usdMoved as bigint) / 1e18;
+              newLoopLev = Number(e.args.leverageAfter as bigint) / 1e18;
+              collateral = e.args.ethMoved as bigint;
+              tokens = 0n;
+              isBuy = false;
+              type = "rebalance";
+              rebalanceType = "netted";
+            }
             break;
           }
           case "RebalancedToReserve": {
