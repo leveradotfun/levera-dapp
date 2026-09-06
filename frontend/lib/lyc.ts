@@ -847,3 +847,130 @@ export async function signEip2612(
     { owner: await signer.getAddress(), spender, value, nonce, deadline },
   );
 }
+
+// ---------------------------------------------------------------
+//                    SUPPLY-SIDE COLLATERAL ROUTING
+// ---------------------------------------------------------------
+
+/// What a deposit of a given size would cost, per collateral, right now.
+///
+/// EarnPool discounts the slice of a deposit that EAGERLY PAIRS -- collateral that lands straight
+/// on a pool whose `seniorGapUsd` actually wanted it -- from `MINT_FEE_BPS` to
+/// `MINT_FEE_PAIRED_BPS`. That is the depositor's half of collateral routing
+/// (`routingSurchargeWad` is the borrower's half), and it is what lets the UI say "mint with ETH
+/// instead, it is cheaper right now" without the protocol having to guess for the user.
+///
+/// The search runs HERE rather than on-chain deliberately: sizing the paired slice means reading
+/// every candidate pool's gap, and EarnPool refuses to iterate the pool array on any path a user
+/// can reach (the same DoS reasoning that keeps redemption iterating listed assets instead). All
+/// the inputs are public reads, so the quote costs nothing on-chain.
+export type CollateralQuote = {
+  token: string;
+  symbol: string;
+  /// Blended entry rate, in bps, for `usdSize` of this collateral.
+  feeBps: number;
+  /// The USD slice that would eagerly pair, and the pool it would land on.
+  pairedUsd: bigint;
+  bestPool: string | null;
+};
+
+/// Sizes the eagerly-pairable slice of `usdSize` for one collateral, and names the pool that
+/// would take it. Mirrors `_tryEagerPair`'s own clamps: the destination's remaining gap, the
+/// asset's cap headroom, and the deposit itself, whichever binds first.
+async function quoteCollateral(
+  addresses: DeployedAddresses,
+  token: string,
+  symbol: string,
+  usdSize: bigint,
+  flatBps: bigint,
+  pairedBps: bigint,
+): Promise<CollateralQuote> {
+  const provider = getProvider();
+  const lyc = new ethers.Contract(addresses.lyc, EarnPoolAbi as ethers.InterfaceAbi, provider);
+
+  const headroom: bigint = await lyc.collateralHeadroomUsd(token);
+
+  // Find the pool on this collateral with the largest unmet senior demand.
+  let bestPool: string | null = null;
+  let bestGap = 0n;
+  for (const factory of allFactories(addresses)) {
+    for (const addr of await fetchLaunchAddresses(factory)) {
+      const launch = getLaunch(addr, provider);
+      try {
+        if ((await launch.quote()).toLowerCase() !== token.toLowerCase()) continue;
+        const gap: bigint = await launch.seniorGapUsd();
+        if (gap > bestGap) {
+          bestGap = gap;
+          bestPool = addr;
+        }
+      } catch {
+        // A launch that cannot answer is simply not a routing candidate.
+      }
+    }
+  }
+
+  let pairedUsd = bestGap < headroom ? bestGap : headroom;
+  if (pairedUsd > usdSize) pairedUsd = usdSize;
+  if (pairedUsd < 0n) pairedUsd = 0n;
+
+  // The same linear blend `_issue` applies: paired dollars at the discount, the rest flat.
+  const feeBps =
+    usdSize === 0n
+      ? Number(flatBps)
+      : Number((pairedUsd * pairedBps + (usdSize - pairedUsd) * flatBps) / usdSize);
+
+  return { token, symbol, feeBps, pairedUsd, bestPool: pairedUsd > 0n ? bestPool : null };
+}
+
+/// Quotes every listed collateral plus USDG for a deposit of `usdSize`, cheapest first.
+///
+/// USDG is always included at the flat rate and never discounted: cash cannot eagerly pair, so it
+/// is the overflow buffer that wins the flow when no volatile pool wants more -- the same role
+/// Hylo gives its USDC pool.
+export async function quoteMintRouting(
+  addresses: DeployedAddresses,
+  usdSize: bigint,
+): Promise<CollateralQuote[]> {
+  const provider = getProvider();
+  const lyc = new ethers.Contract(addresses.lyc, EarnPoolAbi as ethers.InterfaceAbi, provider);
+  const [flatBps, pairedBps] = await Promise.all([
+    lyc.MINT_FEE_BPS() as Promise<bigint>,
+    lyc.MINT_FEE_PAIRED_BPS() as Promise<bigint>,
+  ]);
+
+  const candidates: Array<{ token: string; symbol: string }> = [];
+  if (addresses.weth) candidates.push({ token: addresses.weth, symbol: "WETH" });
+  if (addresses.cbbtc) candidates.push({ token: addresses.cbbtc, symbol: "cbBTC" });
+
+  const quotes = await Promise.all(
+    candidates.map((c) => quoteCollateral(addresses, c.token, c.symbol, usdSize, flatBps, pairedBps)),
+  );
+  quotes.push({ token: addresses.usdg, symbol: "USDG", feeBps: Number(flatBps), pairedUsd: 0n, bestPool: null });
+
+  return quotes.sort((a, b) => a.feeBps - b.feeBps);
+}
+
+/// The one-line nudge for the mint form, or null when nothing beats what the user already picked.
+///
+/// Only speaks up when the saving is real: the cheapest route must actually pair something and
+/// come in strictly under the asset the user selected. Suggesting a switch that saves nothing is
+/// how a tip becomes noise people learn to ignore.
+export async function mintRoutingTip(
+  addresses: DeployedAddresses,
+  usdSize: bigint,
+  selectedToken: string,
+): Promise<{ message: string; token: string; pool: string | null } | null> {
+  const quotes = await quoteMintRouting(addresses, usdSize);
+  const best = quotes[0];
+  if (!best || best.pairedUsd === 0n) return null;
+  if (best.token.toLowerCase() === selectedToken.toLowerCase()) return null;
+
+  const current = quotes.find((q) => q.token.toLowerCase() === selectedToken.toLowerCase());
+  if (!current || current.feeBps <= best.feeBps) return null;
+
+  return {
+    message: `Mint with ${best.symbol} instead — ${best.feeBps} bps instead of ${current.feeBps}. Pools levered against ${best.symbol} want senior right now, so your deposit is attached directly rather than swapped.`,
+    token: best.token,
+    pool: best.bestPool,
+  };
+}
