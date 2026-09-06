@@ -20,9 +20,11 @@ import {
 } from "./launchpad";
 
 const POLL_MS = 1_000;
-const UPPER_L = 25n * 10n ** 17n;
-const LOWER_L = 15n * 10n ** 17n;
-const MAX_BAND_STEPS = 6;
+// UPPER_L / LOWER_L / MAX_BAND_STEPS lived here to walk a coin back inside [1.5, 2.5] by calling
+// protect() and relever() in capped steps. That is not this keeper's job any more -- band work is
+// a posted route a permissionless filler takes (fillSellRoute/fillBuyRoute), priced by the pool.
+// The constants outlived the logic and were referenced nowhere, so they are gone rather than
+// left to imply a band this file no longer defends.
 
 type Snap = {
   addr: string;
@@ -36,10 +38,17 @@ type Snap = {
   harvestableEth: bigint;
 };
 
-/// Graduate, attach idle toward 2x, peel quiet coins into loud ones when idle is empty, and
-/// actively walk coins back into [1.5, 2.5]: protect() while L ≥ 2.5 (each call is capped at
-/// 15% of vault ETH), relever() while L ≤ 1.5 with banked idle USDG. Volume ranking is on-chain
-/// (1-day decaying notional).
+/// Graduate, attach idle toward 2x, peel quiet coins into loud ones when idle is empty, settle
+/// occupancy, harvest the holder fee slice, and per paired coin run the two moves that trade
+/// nothing: `rebalanceToReserve` to correct which bucket the collateral sits in, then `protect()`
+/// as an orphan sweep -- it reverts while a junior still exists, and where the junior IS wiped it
+/// sells the whole vault at once rather than a percentage.
+///
+/// It does NOT walk coins back inside the leverage band. The de-risk/re-lev routes that ration
+/// each fill (fillSellRoute/fillBuyRoute) are a separate mechanism, posted by the pool and taken
+/// by whichever permissionless filler wants the spread -- nothing here calls them.
+///
+/// Volume ranking is on-chain (1-day decaying notional).
 export function useProtocolKeeper(addresses: DeployedAddresses | null) {
   const busyRef = useRef(false);
 
