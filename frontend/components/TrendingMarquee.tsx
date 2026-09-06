@@ -122,6 +122,17 @@ export default function TrendingMarquee() {
     </div>
   );
 
+  // A single trending coin renders once, statically: the two-copy loop makes a lone entry read
+  // as two different tokens side by side. The scrolling tape only earns its duplication when
+  // there is more than one coin to cycle through.
+  if (rows.length === 1) {
+    return (
+      <div className="marquee overflow-hidden border-b border-border bg-bg/80 py-1.5" title="Top tokens by 24h volume">
+        <div className="flex items-center justify-center px-4">{strip(false)}</div>
+      </div>
+    );
+  }
+
   return (
     <div className="marquee group overflow-hidden border-b border-border bg-bg/80 py-1.5" title="Top tokens by 24h volume">
       <div className="flex w-max animate-marquee group-hover:[animation-play-state:paused]">
