@@ -772,7 +772,9 @@ export async function buy(
         timestamp: Date.now(),
       });
     }
-    return receipt;
+    // The ACTUAL fill (charged quote, tokens received) plus the tx hash -- the swap card's toast
+    // reports these, not the pre-trade quote, because slippage makes them differ.
+    return { receipt, filled: amounts, txHash: receipt.hash };
   });
 }
 
@@ -900,7 +902,8 @@ export async function sell(
         timestamp: Date.now(),
       });
     }
-    return receipt;
+    // The ACTUAL proceeds (quote received for the tokens sold) plus the tx hash for the toast.
+    return { receipt, filled: amounts, txHash: receipt.hash };
   });
 }
 

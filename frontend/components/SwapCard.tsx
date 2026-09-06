@@ -304,7 +304,7 @@ export default function SwapCard({
       </div>
 
       {/* Pay */}
-      <div className="relative rounded-2xl bg-surface-2/60 p-4">
+      <div className="relative rounded-2xl border border-border bg-surface-2/60 p-4">
         <div className="flex items-center justify-between text-xs text-muted mb-1">
           <span>Pay</span>
           <div className="flex items-center gap-2">
@@ -344,7 +344,7 @@ export default function SwapCard({
       </div>
 
       {/* Receive */}
-      <div className="rounded-2xl bg-surface-2/60 p-4">
+      <div className="rounded-2xl border border-border bg-surface-2/60 p-4">
         <div className="flex items-center justify-between text-xs text-muted mb-1">
           <span>Receive</span>
         </div>

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 // A minimal, dependency-free toast store. Plain functions (not a React context) so code outside
 // components can push a toast straight from a catch block without threading a hook through every
 // call site.
@@ -6,7 +7,7 @@ export type ToastKind = "success" | "error" | "info";
 /// `message` is the title line ("Swap confirmed", "Minted LYC"); `detail` is an optional second
 /// line with the specifics ("0.5 ETH → 128,400 RHDOGE") -- a one-line "Minted LYC" on its own
 /// tells you nothing you didn't already know you were about to do.
-export type ToastItem = { id: number; kind: ToastKind; message: string; detail?: string; timestamp: number };
+export type ToastItem = { id: number; kind: ToastKind; message: string; detail?: ReactNode; timestamp: number };
 
 let idCounter = 0;
 let toasts: ToastItem[] = [];
@@ -16,7 +17,7 @@ function emit() {
   for (const l of listeners) l(toasts);
 }
 
-export function pushToast(kind: ToastKind, message: string, detail?: string, durationMs = 6000): number {
+export function pushToast(kind: ToastKind, message: string, detail?: ReactNode, durationMs = 6000): number {
   const item: ToastItem = { id: ++idCounter, kind, message, detail, timestamp: Date.now() };
   toasts = [...toasts, item];
   emit();
@@ -105,10 +106,10 @@ export function toastError(err: unknown, fallback = "Something went wrong.") {
     .catch(() => {});
 }
 
-export function toastSuccess(message: string, detail?: string) {
+export function toastSuccess(message: string, detail?: ReactNode) {
   pushToast("success", message, detail);
 }
 
-export function toastInfo(message: string, detail?: string) {
+export function toastInfo(message: string, detail?: ReactNode) {
   pushToast("info", message, detail);
 }

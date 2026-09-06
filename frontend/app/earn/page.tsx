@@ -52,6 +52,17 @@ export default function EarnPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [ethPriceWad, setEthPriceWad] = useState(0n);
   const [tab, setTab] = useState<Tab>("position");
+  // Slippage preference for the swap card gear. vLYC mint/redeem is NAV-priced on-chain (there
+  // is no AMM slippage to protect against), so this is a persisted preference rather than a
+  // trade floor -- unlike the coin page, where it sets real min-out floors.
+  const [slippageBps, setSlippageBps] = useState<number>(() => {
+    if (typeof window === "undefined") return 100;
+    const saved = Number(window.localStorage.getItem("earn:slippageBps"));
+    return Number.isFinite(saved) && saved >= 0 && saved <= 5000 ? saved : 100;
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem("earn:slippageBps", String(slippageBps)); } catch {}
+  }, [slippageBps]);
   const [swapMode, setSwapMode] = useState<"buy" | "sell">("buy");
   const [chartPeriod, setChartPeriod] = useState<"5m" | "1h" | "4h" | "1d" | "all">("all");
   const { apy, samples } = useLycMetrics(addresses);
@@ -197,6 +208,10 @@ export default function EarnPage() {
     <>
           <SwapCard
             mode={swapMode}
+            slippage={(slippageBps / 100).toFixed(1)}
+            slippageOptions={[50, 100, 300]}
+            onSlippageChange={setSlippageBps}
+            slippageBps={slippageBps}
             onModeChange={(m) => { setSwapMode(m); setDepositAmt(""); setRedeemAmt(""); }}
             onFlip={() => { const next = swapMode === "buy" ? "sell" : "buy"; setSwapMode(next); setDepositAmt(""); setRedeemAmt(""); }}
             buyLabel="Buy vLYC" sellLabel="Sell vLYC"

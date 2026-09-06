@@ -42,6 +42,7 @@ import { useIsDesktop } from "@/lib/useMediaQuery";
 import { timeAgo } from "@/lib/utils";
 import { toastError, toastSuccess } from "@/lib/toast";
 import { TX_TIMEOUT_MS, withTimeout } from "@/lib/txTimeout";
+import { TxLink } from "@/components/ExplorerLink";
 
 const FAV_KEY = "launchpad-favorites";
 // Last-used trade side persists across reloads: a seller reloading mid-position shouldn't be
@@ -521,8 +522,22 @@ export default function LaunchDetail({
           );
         }
         const minTokensOut = (q * (10000n - BigInt(slippageBps))) / 10000n;
-        await withTimeout(buy(addresses, launch.address, payToken, parsed, minTokensOut), TX_TIMEOUT_MS, "Buy");
-        toastSuccess("Swap confirmed", `${fmtPay(parsed)} ${paySymbol} → ${formatWad(q, 0)} ${launch.symbol}`);
+        const result = await withTimeout(
+          buy(addresses, launch.address, payToken, parsed, minTokensOut),
+          TX_TIMEOUT_MS,
+          "Buy",
+        );
+        // Report the ACTUAL fill from the receipt -- slippage makes "what you clicked" and "what
+        // you got" different numbers, and the pre-trade quote is only an estimate.
+        const got = result.filled?.tokenAmount ?? q;
+        const paid = result.filled?.amount ?? parsed;
+        toastSuccess(
+          "Swap confirmed",
+          <span>
+            Paid {fmtPay(paid)} {paySymbol} → received {formatWad(got, 0)} {launch.symbol}{" "}
+            <TxLink hash={result.txHash} />
+          </span>,
+        );
       } else {
         // Clamp to the live balance rather than whatever is in the box: the balance can move
         // between typing and submitting (the autopilot trades the same coins), and selling more
@@ -544,12 +559,20 @@ export default function LaunchDetail({
           : ("QUOTE" as const);
         const expectedUsdg = quoteToUsdg(expectedOut);
         const minUsdgOut = (expectedUsdg * (10000n - BigInt(slippageBps))) / 10000n;
-        await withTimeout(sell(addresses, launch.address, amt, minOut, sellReceive, minUsdgOut), TX_TIMEOUT_MS, "Sell");
+        const result = await withTimeout(
+          sell(addresses, launch.address, amt, minOut, sellReceive, minUsdgOut),
+          TX_TIMEOUT_MS,
+          "Sell",
+        );
+        // Actual proceeds from the receipt -- the receive-side estimate above is a quote.
+        const gotQuote = result.filled?.amount ?? expectedOut;
+        const proceeds =
+          sellReceive === "USDG" ? `${fmtUsdg(expectedUsdg)} USDG` : `${fmtQuote(gotQuote, quotePlaces)} ${quoteSymbol}`;
         toastSuccess(
           "Swap confirmed",
-          `${formatWad(amt, 0)} ${launch.symbol} → ${
-            sellReceive === "USDG" ? `${fmtUsdg(expectedUsdg)} USDG` : `${fmtQuote(expectedOut, quotePlaces)} ${quoteSymbol}`
-          }`,
+          <span>
+            Sold {formatWad(amt, 0)} {launch.symbol} → received {proceeds} <TxLink hash={result.txHash} />
+          </span>,
         );
       }
       // One swap moves every number the card shows: the coin balance, the wallet's ETH/quote
