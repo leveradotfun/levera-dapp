@@ -10,6 +10,7 @@ import { useTradeHistory } from "@/lib/trades";
 import { fetchHolderCount } from "@/lib/launchStats";
 import { useXHandles } from "@/lib/xHandles";
 import PopNumber from "@/components/PopNumber";
+import EditTokenDetails from "@/components/EditTokenDetails";
 import TraderIdentity from "@/components/TraderIdentity";
 import dynamic from "next/dynamic";
 import { SkeletonChart, SkeletonRows } from "@/components/Skeleton";
@@ -195,7 +196,12 @@ export default function LaunchDetail({
   const [usdgBalance, setUsdgBalance] = useState<bigint>(0n);
   const [slippageBps, setSlippageBps] = useState(100); // 1% curve; bumped on graduation
   const wallet = useWallet(addresses);
-  const meta = useTokenMetadata(launch.address);
+  const { meta, reload: reloadMeta } = useTokenMetadata(launch.address);
+  // The creator can attach or revise the coin's image and links after launch. Without this
+  // there was no way back from a metadata write that did not land at create time.
+  const [editingDetails, setEditingDetails] = useState(false);
+  const isCreator =
+    !!wallet.address && wallet.address.toLowerCase() === launch.creator.toLowerCase();
   // Favorites persist per wallet so the list is yours, not the browser's; a plain-set in
   // localStorage was enough — no backend for a preference this small.
   const [faved, setFaved] = useState(false);
@@ -890,6 +896,17 @@ export default function LaunchDetail({
               <span>{timeAgo(launch.stats.createdAt)} ago</span>
               <span className="text-muted">·</span>
               <TraderIdentity address={launch.creator} identity={xHandles.get(launch.creator.toLowerCase())} size={14} className="text-muted" />
+              {isCreator ? (
+                <>
+                  <span className="text-muted">·</span>
+                  <button
+                    onClick={() => setEditingDetails(true)}
+                    className="text-muted underline underline-offset-2 hover:text-foreground"
+                  >
+                    Edit details
+                  </button>
+                </>
+              ) : null}
             </div>
           </div>
         </div>
@@ -1039,6 +1056,14 @@ export default function LaunchDetail({
           </MobileSwapSheet>
         )}
       </div>
+      {editingDetails ? (
+        <EditTokenDetails
+          launchAddress={launch.address}
+          meta={meta}
+          onSaved={reloadMeta}
+          onClose={() => setEditingDetails(false)}
+        />
+      ) : null}
     </div>
   );
 }

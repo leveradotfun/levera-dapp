@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export type TokenMetadata = {
   launch: string;
@@ -12,8 +12,11 @@ export type TokenMetadata = {
   description: string | null;
 };
 
+/// @returns the stored metadata plus a `reload` the creator's edit form calls after saving, so a
+/// freshly attached image appears without a page refresh.
 export function useTokenMetadata(launchAddress: string | null) {
   const [meta, setMeta] = useState<TokenMetadata | null>(null);
+  const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
     if (!launchAddress) return;
@@ -27,9 +30,10 @@ export function useTokenMetadata(launchAddress: string | null) {
     return () => {
       cancelled = true;
     };
-  }, [launchAddress]);
+  }, [launchAddress, nonce]);
 
-  return meta;
+  const reload = useCallback(() => setNonce((n) => n + 1), []);
+  return { meta, reload };
 }
 
 /// Images for a whole set of launches, fetched in one batched call and keyed by lowercase

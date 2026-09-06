@@ -649,6 +649,47 @@ async function quotePoolSell(launch: ethers.Contract, tokensIn: bigint): Promise
   return gross - (gross * TOTAL_FEE_BPS) / BPS_DENOMINATOR;
 }
 
+/// Record a filled trade for the local ledger, and NEVER let doing so fail the trade.
+///
+/// Once a buy or sell has a receipt the user's money has already moved. Everything after that
+/// point -- pricing the fill in USD, reading the quote's scale -- is bookkeeping for the P&L
+/// display, and it runs against `getProvider()`, a different node from the one the wallet mined
+/// against. A load-balanced RPC's replicas lag (1-23 blocks on this deployment, varying by the
+/// second), so those reads can fail or return `0x` for reasons that have nothing to do with the
+/// trade. Letting that reject the call reports a failure for a trade that succeeded -- and the
+/// obvious user response, trying again, spends real money a second time.
+///
+/// This is the same shape that broke `createLaunch` (a stats read discarding a coin that had
+/// already launched). The rule: after the receipt, only work the user is actually waiting on may
+/// throw. Essential follow-on legs -- the USDG conversion in `sell`, say -- are NOT this and
+/// still surface their own errors.
+async function recordTradeBestEffort(
+  launchAddress: string,
+  trader: string,
+  launch: ethers.Contract,
+  side: "buy" | "sell",
+  amount: bigint,
+  tokenAmount: bigint,
+): Promise<void> {
+  try {
+    // The launch's OWN oracle and ITS scale: a cbBTC amount is 8 decimals, so both the cbBTC
+    // price and the 1e10 lift to WAD are needed -- one without the other is off by orders of
+    // magnitude, which is what printed $0.00 trades for cbBTC coins.
+    const [collateralPriceUsd, quoteScale] = await Promise.all([
+      fetchLaunchCollateralPriceUsd(launchAddress),
+      launch.quoteScale() as Promise<bigint>,
+    ]);
+    recordTrade(launchAddress, trader, {
+      side,
+      usdValueWad: ((amount * quoteScale * collateralPriceUsd) / WAD).toString(),
+      tokenAmountWad: tokenAmount.toString(),
+      timestamp: Date.now(),
+    });
+  } catch {
+    // Ledger display only. The fill is on-chain and the caller gets its receipt.
+  }
+}
+
 function extractTradeAmounts(
   receipt: ethers.ContractTransactionReceipt,
   eventName: "CurveBuy" | "CurveSell" | "JuniorMinted" | "JuniorRedeemed" | "PoolBuy" | "PoolSell"
@@ -796,19 +837,7 @@ export async function buy(
 
     const amounts = extractTradeAmounts(receipt, usedPool ? "PoolBuy" : "CurveBuy");
     if (amounts) {
-      // The launch's OWN oracle and ITS scale: a cbBTC amount is 8 decimals, so both the cbBTC
-      // price and the 1e10 lift to WAD are needed -- one without the other is off by orders of
-      // magnitude, which is what printed $0.00 trades for cbBTC coins.
-      const [collateralPriceUsd, quoteScale] = await Promise.all([
-        fetchLaunchCollateralPriceUsd(launchAddress),
-        launch.quoteScale() as Promise<bigint>,
-      ]);
-      recordTrade(launchAddress, address, {
-        side: "buy",
-        usdValueWad: ((amounts.amount * quoteScale * collateralPriceUsd) / WAD).toString(),
-        tokenAmountWad: amounts.tokenAmount.toString(),
-        timestamp: Date.now(),
-      });
+      await recordTradeBestEffort(launchAddress, address, launch, "buy", amounts.amount, amounts.tokenAmount);
     }
     // The ACTUAL fill (charged quote, tokens received) plus the tx hash -- the swap card's toast
     // reports these, not the pre-trade quote, because slippage makes them differ.
@@ -929,16 +958,7 @@ export async function sell(
     }
 
     if (amounts) {
-      const [collateralPriceUsd, quoteScale] = await Promise.all([
-        fetchLaunchCollateralPriceUsd(launchAddress),
-        launch.quoteScale() as Promise<bigint>,
-      ]);
-      recordTrade(launchAddress, address, {
-        side: "sell",
-        usdValueWad: ((amounts.amount * quoteScale * collateralPriceUsd) / WAD).toString(),
-        tokenAmountWad: amounts.tokenAmount.toString(),
-        timestamp: Date.now(),
-      });
+      await recordTradeBestEffort(launchAddress, address, launch, "sell", amounts.amount, amounts.tokenAmount);
     }
     // The ACTUAL proceeds (quote received for the tokens sold) plus the tx hash for the toast.
     return { receipt, filled: amounts, txHash: receipt.hash };

@@ -237,7 +237,7 @@ export default function CreatePage() {
         }
         if (!saved) {
           setError(
-            `Coin created — but its image/description could not be saved (last try returned ${lastStatus || "a network error"}). You can retry the launch details later.`,
+            `Coin created — but its image/description could not be saved (last try returned ${lastStatus || "a network error"}). Open the coin and use "Edit details" to attach them.`,
           );
         }
       }
